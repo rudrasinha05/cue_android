@@ -1,0 +1,49 @@
+# Cue architecture v1.0
+
+This document freezes the core behavior agreed before implementation. Internal packages can change when a milestone requires it, provided these contracts remain intact. New features go to the backlog for a later phase.
+
+## Product and identity
+
+- Android app, floating control, and notification assistant are all named **Cue**.
+- App package: `com.rudrasinha.cue`. Native Kotlin and Jetpack Compose UI; System, Light, and Dark themes.
+- Guest users can make local reminders. Sign-in is mandatory to enable the floating Cue. Activation is available only from the original app and requires explicit Android overlay permission.
+- The user chooses floating Cue, notification panel assistant, both, or neither. Turning either surface off never deletes reminders.
+
+## Boundaries
+
+```text
+Share / text / voice / email / notification / document / calendar
+    -> normalize + extract + confidence
+    -> duplicate decision (create / merge / update / suggest / ignore)
+    -> unified commitment + source links
+    -> reminder chain + local Android scheduler + daily planner
+    -> app / floating Cue / notification panel
+```
+
+All entry points invoke one domain pipeline and one quick-action system. A commitment is the canonical task, event, deadline, follow-up, or routine; multiple source records may point to it. A reminder chain belongs to one commitment. Completion and cancellation atomically stop outstanding alerts. Deduplication decisions are transactional on the backend and idempotent on-device.
+
+## Android and backend
+
+- Room stores the local execution copy and pending sync operations. DataStore holds preferences. Exact time-sensitive user reminders use AlarmManager with the platform's applicable permission path; WorkManager handles durable maintenance and retry, never exact firing. Restore schedules after reboot and relevant timezone changes.
+- Supabase Auth, PostgreSQL with per-user RLS, Storage, and server functions provide account sync and integrations. No service-role key or AI provider key enters the APK. The repository does not assume an existing Supabase project; setup is a later milestone.
+- AI is accessed through a provider-neutral server gateway. Extraction produces structured candidates and provenance; deterministic scheduling fires from local data even when the network or AI service fails.
+- Per-source opt-in governs email, calendar, notification access, microphone, overlay, and import permissions. Request permissions when the feature is enabled. Avoid unrestricted SMS or Accessibility scraping. Raw third-party content is retained only as needed under explicit settings.
+- A foreground or user-visible path must be used for any supported wake-word mode; tap-to-talk is the guaranteed voice path.
+
+## Shared six actions
+
+Voice Reminder, Quick Reminder, Import/Scan, Ask AI, My Day, Assistant Settings. Floating Cue displays them in an inward-expanding radial menu based on screen position. It can drag, snap, partly hide at an edge, and has user-adjustable collapsed opacity; expanded actions stay readable. Notification mode exposes the same actions through platform-appropriate notification buttons and a tap-through action sheet.
+
+## Data contract
+
+The canonical entities are `Commitment`, `Occurrence`, `ReminderChain`, `Alert`, `Source`, `Candidate`, `DuplicateDecision`, `DailyPlan`, `PlanBlock`, `IntegrationConnection`, `Device`, and `UserPreference`. Every entity is scoped to a user or guest-local profile. Each source has a stable origin ID/hash for ingestion idempotency. Dates store instants plus original timezone and user intent. Ambiguous dates remain candidates for confirmation.
+
+## Product invariants
+
+1. One commitment can have multiple sources; no duplicate user-facing reminders for the same event.
+2. Manual reminders and already scheduled alerts work offline.
+3. Fixed events remain fixed in planning; movable tasks may be rescheduled without duplication.
+4. AI confidence gates automation and uncertain imports enter review.
+5. Sign-out removes the floating control and account-bound access without deleting synced history.
+6. Permission revocation degrades the relevant feature and leaves existing local reminders intact.
+7. UI surfaces never write alarm/database state independently of the shared domain use cases.
