@@ -4,7 +4,7 @@ Cue is an Android reminder assistant that captures commitments, links duplicate 
 
 ## Project status
 
-**M0 — repository and Android Studio foundation.** This commit establishes the build configuration, app identity, architecture contract, milestone gates, and CI. Reminder, account, overlay, AI, import, and integration features are not implemented yet.
+**M0 foundation built; M1 in progress.** The M1 branch adds the five-tab shell, a persistent System/Light/Dark setting, and a guest-local Room database. Account sign-in and cloud sync require a dedicated Cue Supabase project. Reminder creation, overlay, AI, import, and integrations are not implemented yet.
 
 ## Open in Android Studio
 
