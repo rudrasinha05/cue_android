@@ -21,4 +21,4 @@ No milestone is called complete until its behavior is demonstrated on device or 
 | M14 | Sync/security/performance | Multi-device conflict tests, RLS review, offline recovery, data export/deletion |
 | M15 | Release QA | Device matrix, accessibility, permissions, Play policy, signed release |
 
-Active milestone: **M0**. This first commit provides the source foundation. CI and an Android Studio launch must still pass before M0 is marked complete.
+Active milestone: **M1**. The M0 debug build passed in GitHub Actions; an on-device launch check remains. M1's local shell and storage are in progress. Its account and cloud acceptance checks remain blocked until a Cue-specific Supabase project is chosen and connected.
