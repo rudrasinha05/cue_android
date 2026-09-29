@@ -6,34 +6,75 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import com.rudrasinha.cue.settings.ColorTheme
 import com.rudrasinha.cue.settings.ThemePreference
 
-private val LightColors = lightColorScheme(
-    primary = Color(0xFF5340A0),
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFFE9E1FF),
-    onPrimaryContainer = Color(0xFF251754),
-    secondaryContainer = Color(0xFFEDE8F5),
-    background = Color(0xFFFAF9FC),
-    surface = Color(0xFFFAF9FC)
+private data class Palette(
+    val primary: Color,
+    val lightContainer: Color,
+    val lightBackground: Color,
+    val darkPrimary: Color,
+    val darkContainer: Color,
+    val darkBackground: Color
 )
 
-private val DarkColors = darkColorScheme(
-    primary = Color(0xFFCBBEFF),
-    onPrimary = Color(0xFF35236D),
-    primaryContainer = Color(0xFF443287),
-    onPrimaryContainer = Color(0xFFE9E1FF),
-    secondaryContainer = Color(0xFF393441),
-    background = Color(0xFF14121A),
-    surface = Color(0xFF14121A)
-)
+private fun palette(theme: ColorTheme): Palette = when (theme) {
+    ColorTheme.DEFAULT -> Palette(
+        Color(0xFF5340A0), Color(0xFFE9E1FF), Color(0xFFFAF9FC),
+        Color(0xFFCBBEFF), Color(0xFF443287), Color(0xFF14121A)
+    )
+    ColorTheme.OCEAN -> Palette(
+        Color(0xFF006878), Color(0xFFB8EAF4), Color(0xFFF4FAFC),
+        Color(0xFF85D5E7), Color(0xFF174F5B), Color(0xFF101C20)
+    )
+    ColorTheme.FOREST -> Palette(
+        Color(0xFF2A684C), Color(0xFFD0EDDA), Color(0xFFF6FBF7),
+        Color(0xFF99D9AE), Color(0xFF2C513D), Color(0xFF121B16)
+    )
+    ColorTheme.SUNSET -> Palette(
+        Color(0xFFA84F36), Color(0xFFFFDDD2), Color(0xFFFFF8F5),
+        Color(0xFFFFB49E), Color(0xFF764131), Color(0xFF211713)
+    )
+    ColorTheme.ROSE -> Palette(
+        Color(0xFFA23464), Color(0xFFFFD9E6), Color(0xFFFFF7FA),
+        Color(0xFFFFAFCB), Color(0xFF74314F), Color(0xFF21141A)
+    )
+    ColorTheme.MIDNIGHT -> Palette(
+        Color(0xFF374C88), Color(0xFFDCE4FF), Color(0xFFF6F8FF),
+        Color(0xFFB4C5FF), Color(0xFF303F6A), Color(0xFF101522)
+    )
+}
+
+fun themeSwatch(theme: ColorTheme): Color = palette(theme).primary
 
 @Composable
-fun CueTheme(preference: ThemePreference, content: @Composable () -> Unit) {
+fun CueTheme(preference: ThemePreference, colorTheme: ColorTheme, content: @Composable () -> Unit) {
     val dark = when (preference) {
         ThemePreference.LIGHT -> false
         ThemePreference.DARK -> true
         ThemePreference.SYSTEM -> isSystemInDarkTheme()
     }
-    MaterialTheme(colorScheme = if (dark) DarkColors else LightColors, content = content)
+    val colors = palette(colorTheme)
+    val scheme = if (dark) {
+        darkColorScheme(
+            primary = colors.darkPrimary,
+            onPrimary = colors.darkBackground,
+            primaryContainer = colors.darkContainer,
+            onPrimaryContainer = colors.darkPrimary,
+            secondaryContainer = colors.darkContainer,
+            background = colors.darkBackground,
+            surface = colors.darkBackground
+        )
+    } else {
+        lightColorScheme(
+            primary = colors.primary,
+            onPrimary = Color.White,
+            primaryContainer = colors.lightContainer,
+            onPrimaryContainer = colors.primary,
+            secondaryContainer = colors.lightContainer,
+            background = colors.lightBackground,
+            surface = colors.lightBackground
+        )
+    }
+    MaterialTheme(colorScheme = scheme, content = content)
 }
