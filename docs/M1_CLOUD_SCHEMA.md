@@ -2,6 +2,18 @@
 
 This is the SQL applied to Cue project `gukhuakkguzzhrvtyszx` through the Supabase migration `cue_m1_owner_scoped_store`. It is recorded here for code review and reproducibility; it has already been applied to that project.
 
+Two follow-up migrations narrowed permissions after auditing the project's effective default grants. Apply them in order after the base migration when recreating this schema. This prevents authenticated clients from physically deleting a reminder or source and from truncating any history table; account deletion still cascades through the owner foreign keys.
+
+```sql
+-- cue_m1_preserve_history
+revoke delete on public.commitments, public.sources from authenticated;
+
+-- cue_m1_minimum_table_grants
+revoke all on public.commitments, public.sources, public.reminder_events from anon, authenticated;
+grant select, insert, update on public.commitments, public.sources to authenticated;
+grant select, insert on public.reminder_events to authenticated;
+```
+
 ```sql
 create table public.commitments (
   id uuid primary key,
