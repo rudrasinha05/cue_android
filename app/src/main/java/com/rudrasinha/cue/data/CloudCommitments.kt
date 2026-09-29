@@ -28,10 +28,24 @@ class CloudCommitments(private val database: CueDatabase, private val client: Su
         }
         database.withTransaction { dao.claimGuestRecords(userId) }
 
+        syncPending(userId)
+
         val remote = client.from("commitments").select {
             filter { eq("user_id", userId) }
         }.decodeList<CloudCommitment>()
-        database.withTransaction { dao.upsert(remote.map { it.toLocal() }) }
+        database.withTransaction {
+            remote.forEach { record ->
+                if (dao.byId(record.id)?.dirty != true) dao.upsert(listOf(record.toLocal()))
+            }
+        }
+    }
+
+    suspend fun syncPending(userId: String) {
+        val dao = database.commitments()
+        dao.pending(userId).forEach { local ->
+            client.from("commitments").upsert(local.toCloud(userId))
+            dao.markSynced(local.id, userId, local.updatedAtMillis)
+        }
     }
 
     suspend fun clearAccountCache(userId: String) {
