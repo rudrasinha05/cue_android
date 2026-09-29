@@ -18,7 +18,8 @@ android {
         versionName = "0.1.0"
         buildConfigField("String", "SUPABASE_URL", "\"https://gukhuakkguzzhrvtyszx.supabase.co\"")
         buildConfigField("String", "SUPABASE_KEY", "\"sb_publishable_s74pBwsiGCjaDHfWrmGg0Q_JY50Mvu7\"")
-        val googleClientId = providers.gradleProperty("cueGoogleWebClientId").orElse("").get()
+        val googleClientId = providers.gradleProperty("cueGoogleWebClientId")
+            .orElse("532020672384-7h0r8u0p0etqdk6lvfj1b6jn4d1dgep6.apps.googleusercontent.com").get()
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleClientId\"")
     }
 
