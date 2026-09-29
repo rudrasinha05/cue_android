@@ -4,7 +4,7 @@ Cue is an Android reminder assistant that captures commitments, links duplicate 
 
 ## Project status
 
-**M0 built; M1 in progress.** The app has a five-tab shell, a persistent System/Light/Dark setting, Cue Default plus five selectable color themes, and a guest-local Room database. Google sign-in and cloud sync require a dedicated Cue Supabase project. Reminder creation, overlay, AI, import, and integrations are not implemented yet.
+**M0 and M1 accepted; M2 in progress.** The app has a five-tab shell, persistent System/Light/Dark and six color themes, a guest-local Room database, Google sign-in and a dedicated owner-scoped Supabase project. A guest commitment can be created and migrated to the signed-in account. M2 adds full commitment editing, completion, snooze, and offline alerts. Overlay, AI, import, and integrations are later milestones.
 
 ## Open in Android Studio
 
@@ -13,6 +13,10 @@ Cue is an Android reminder assistant that captures commitments, links duplicate 
 3. Sync Gradle, then run the `app` configuration on an Android 8.0+ emulator or device.
 
 The repository includes the Gradle wrapper, so no system Gradle installation is needed. Do not commit `local.properties`, signing keys, Supabase secrets, or AI provider keys.
+
+## M1 account setup
+
+See [Cue account setup](docs/M1_ACCOUNT_SETUP.md) for the Google Cloud and Supabase settings needed to enable the sign-in button and verify guest migration. The APK contains only Cue's public Supabase URL and publishable key; it never contains the Google client secret.
 
 ## Working agreement
 

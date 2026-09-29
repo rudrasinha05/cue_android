@@ -21,4 +21,4 @@ No milestone is called complete until its behavior is demonstrated on device or 
 | M14 | Sync/security/performance and compressed archive | Multi-device conflict tests, RLS review, offline recovery, data export/deletion; old history stored in lossless versioned batches, round-trip/count/checksum verified, searchable metadata indexed, selected ranges restored, failure recovery and user isolation tested |
 | M15 | Release QA | Device matrix, accessibility, permissions, Play policy, signed release |
 
-Active milestone: **M1**. M0 debug build and on-device launch passed. M1's local shell and storage are in progress. Account and cloud acceptance checks require a dedicated Cue Supabase project in the user-selected organization.
+Active milestone: **M2**. M1 Google login, logout/returning account, guest migration, and theme checks were accepted by the owner on device; the latest M1 Android debug CI build passed (`952369e`). M2 implements commitment CRUD and local scheduling with offline firing and reboot recovery. M1 sign-in and guest data isolation remain regression checks.

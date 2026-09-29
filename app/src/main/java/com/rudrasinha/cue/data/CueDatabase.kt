@@ -7,6 +7,8 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import androidx.room.Query
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import kotlinx.coroutines.flow.Flow
@@ -25,8 +27,20 @@ data class CommitmentEntity(
 
 @Dao
 interface CommitmentDao {
-    @Query("SELECT * FROM commitments WHERE ownerId = 'guest' AND status = 'active' ORDER BY dueAtMillis ASC")
-    fun observeActive(): Flow<List<CommitmentEntity>>
+    @Query("SELECT * FROM commitments WHERE ownerId = :ownerId AND status = 'active' ORDER BY dueAtMillis ASC")
+    fun observeActive(ownerId: String): Flow<List<CommitmentEntity>>
+
+    @Query("SELECT * FROM commitments WHERE ownerId = 'guest'")
+    suspend fun guestRecords(): List<CommitmentEntity>
+
+    @Query("UPDATE commitments SET ownerId = :userId WHERE ownerId = 'guest'")
+    suspend fun claimGuestRecords(userId: String)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(records: List<CommitmentEntity>)
+
+    @Query("DELETE FROM commitments WHERE ownerId = :userId")
+    suspend fun removeAccountCache(userId: String)
 }
 
 @Database(entities = [CommitmentEntity::class], version = 1, exportSchema = true)

@@ -1,5 +1,6 @@
 package com.rudrasinha.cue
 
+import android.app.Activity
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -16,6 +17,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -29,11 +32,13 @@ import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -56,23 +61,33 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.rudrasinha.cue.data.CommitmentDao
+import com.rudrasinha.cue.data.CommitmentEntity
 import com.rudrasinha.cue.data.CueDatabase
+import com.rudrasinha.cue.data.CloudCommitments
+import com.rudrasinha.cue.auth.CueAuth
 import com.rudrasinha.cue.settings.ThemePreference
 import com.rudrasinha.cue.settings.ColorTheme
 import com.rudrasinha.cue.settings.ThemeStore
 import com.rudrasinha.cue.ui.CueTheme
 import com.rudrasinha.cue.ui.themeSwatch
 import java.time.LocalDate
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import java.util.UUID
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.LaunchedEffect
+import io.github.jan.supabase.auth.auth
+import io.github.jan.supabase.auth.status.SessionStatus
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val themeStore = ThemeStore(applicationContext)
-        val commitments = CueDatabase.get(applicationContext).commitments()
-        setContent { CueApp(themeStore, commitments) }
+        val database = CueDatabase.get(applicationContext)
+        val auth = CueAuth(applicationContext)
+        val cloud = CloudCommitments(database, auth.client)
+        setContent { CueApp(themeStore, database.commitments(), auth, cloud, this) }
     }
 }
 
@@ -86,12 +101,38 @@ private enum class Tab(val label: String, val icon: ImageVector) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CueApp(themeStore: ThemeStore, commitments: CommitmentDao) {
+private fun CueApp(
+    themeStore: ThemeStore,
+    commitments: CommitmentDao,
+    auth: CueAuth,
+    cloud: CloudCommitments,
+    activity: Activity
+) {
     val theme by themeStore.mode.collectAsState(initial = ThemePreference.SYSTEM)
     val colorTheme by themeStore.colorTheme.collectAsState(initial = ColorTheme.DEFAULT)
-    val items by commitments.observeActive().collectAsState(initial = emptyList())
+    val session by auth.client.auth.sessionStatus.collectAsState(initial = SessionStatus.Initializing)
+    val userId = (session as? SessionStatus.Authenticated)?.session?.user?.id
+    val ownerId = userId ?: "guest"
+    val items by remember(ownerId) { commitments.observeActive(ownerId) }.collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
     var selected by rememberSaveable { mutableStateOf(Tab.TODAY) }
+    var accountMessage by remember { mutableStateOf<String?>(null) }
+    var accountBusy by remember { mutableStateOf(false) }
+    var guestMessage by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(userId) {
+        if (userId != null) {
+            accountBusy = true
+            try {
+                cloud.restoreAndClaim(userId)
+                accountMessage = "Account synced."
+            } catch (e: Exception) {
+                accountMessage = "Sync paused: ${e.message ?: "check your connection"}"
+            } finally {
+                accountBusy = false
+            }
+        }
+    }
 
     CueTheme(theme, colorTheme) {
         Scaffold(
@@ -104,7 +145,7 @@ private fun CueApp(themeStore: ThemeStore, commitments: CommitmentDao) {
                             shape = RoundedCornerShape(12.dp),
                             color = MaterialTheme.colorScheme.secondaryContainer
                         ) {
-                            Text("GUEST", modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            Text(if (userId == null) "GUEST" else "SIGNED IN", modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
                                 style = MaterialTheme.typography.labelSmall)
                         }
                     }
@@ -124,7 +165,21 @@ private fun CueApp(themeStore: ThemeStore, commitments: CommitmentDao) {
             }
         ) { padding ->
             when (selected) {
-                Tab.TODAY -> TodayScreen(items.size, padding)
+                Tab.TODAY -> TodayScreen(items, userId == null, guestMessage, { title ->
+                    scope.launch {
+                        try {
+                            val now = System.currentTimeMillis()
+                            commitments.upsert(listOf(CommitmentEntity(
+                                id = UUID.randomUUID().toString(), ownerId = "guest", title = title,
+                                details = null, dueAtMillis = null, timezone = ZoneId.systemDefault().id,
+                                status = "active", updatedAtMillis = now
+                            )))
+                            guestMessage = null
+                        } catch (e: Exception) {
+                            guestMessage = "Could not save locally: ${e.message ?: "try again"}"
+                        }
+                    }
+                }, padding)
                 Tab.UPCOMING -> EmptyScreen("Upcoming", "Your future commitments will appear here.", Icons.Default.CalendarMonth, padding)
                 Tab.AI -> EmptyScreen("Ask Cue", "Your conversations will appear here.", Icons.Default.AutoAwesome, padding)
                 Tab.INBOX -> EmptyScreen("Inbox", "Nothing needs your review right now.", Icons.Default.Inbox, padding)
@@ -132,6 +187,27 @@ private fun CueApp(themeStore: ThemeStore, commitments: CommitmentDao) {
                     theme, colorTheme,
                     { scope.launch { themeStore.set(it) } },
                     { scope.launch { themeStore.setColorTheme(it) } },
+                    userId != null, accountBusy, accountMessage,
+                    {
+                        scope.launch {
+                            accountBusy = true
+                            accountMessage = null
+                            try { auth.signIn(activity) }
+                            catch (e: Exception) { accountMessage = e.message ?: "Sign-in failed." }
+                            finally { accountBusy = false }
+                        }
+                    },
+                    {
+                        scope.launch {
+                            accountBusy = true
+                            try {
+                                auth.signOut()
+                                userId?.let { cloud.clearAccountCache(it) }
+                                accountMessage = null
+                            } catch (e: Exception) { accountMessage = e.message ?: "Sign-out failed." }
+                            finally { accountBusy = false }
+                        }
+                    },
                     padding
                 )
             }
@@ -140,9 +216,13 @@ private fun CueApp(themeStore: ThemeStore, commitments: CommitmentDao) {
 }
 
 @Composable
-private fun TodayScreen(activeCount: Int, padding: PaddingValues) {
+private fun TodayScreen(
+    commitments: List<CommitmentEntity>, isGuest: Boolean, guestMessage: String?,
+    onAddGuest: (String) -> Unit, padding: PaddingValues
+) {
     val date = remember { LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE, d MMMM", Locale.getDefault())) }
-    Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 24.dp)) {
+    var newTitle by rememberSaveable { mutableStateOf("") }
+    Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp)) {
         Spacer(Modifier.height(22.dp))
         Text(date.uppercase(), color = MaterialTheme.colorScheme.primary,
             style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
@@ -161,19 +241,41 @@ private fun TodayScreen(activeCount: Int, padding: PaddingValues) {
                     tint = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.size(20.dp))
                 Column {
-                    Text("$activeCount active", style = MaterialTheme.typography.headlineSmall,
+                    Text("${commitments.size} active", style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.SemiBold)
-                    Text("commitments in your local space",
+                    Text("commitments in your space",
                         color = MaterialTheme.colorScheme.onPrimaryContainer)
                 }
             }
         }
-        if (activeCount == 0) {
+        if (isGuest) {
+            Spacer(Modifier.height(24.dp))
+            OutlinedTextField(
+                value = newTitle, onValueChange = { newTitle = it },
+                label = { Text("Guest commitment") },
+                singleLine = true, modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(8.dp))
+            Button(onClick = {
+                onAddGuest(newTitle.trim())
+                newTitle = ""
+            }, enabled = newTitle.isNotBlank()) { Text("Save on this device") }
+            Text("Sign in to sync this commitment.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            guestMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        }
+        if (commitments.isEmpty()) {
             Spacer(Modifier.height(32.dp))
             Text("A little room to breathe", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(8.dp))
-            Text("Your day is clear. When you add a commitment, it will show up here.",
+            Text("Your day is clear. Saved commitments will show up here.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            Spacer(Modifier.height(24.dp))
+            commitments.forEach { commitment ->
+                Card(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                    Text(commitment.title, Modifier.padding(16.dp), style = MaterialTheme.typography.bodyLarge)
+                }
+            }
         }
     }
 }
@@ -199,12 +301,30 @@ private fun YouScreen(
     colorTheme: ColorTheme,
     onTheme: (ThemePreference) -> Unit,
     onColorTheme: (ColorTheme) -> Unit,
+    signedIn: Boolean,
+    accountBusy: Boolean,
+    accountMessage: String?,
+    onSignIn: () -> Unit,
+    onSignOut: () -> Unit,
     padding: PaddingValues
 ) {
     Column(Modifier.fillMaxSize().padding(padding).padding(24.dp)) {
         Text("Your space", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(8.dp))
-        Text("Using Cue as a guest", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(if (signedIn) "Your synced Cue account" else "Using Cue as a guest",
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(16.dp))
+        if (signedIn) {
+            Button(onClick = onSignOut, enabled = !accountBusy) { Text("Sign out") }
+        } else {
+            Button(onClick = onSignIn, enabled = !accountBusy && BuildConfig.GOOGLE_WEB_CLIENT_ID.isNotBlank()) {
+                Text("Continue with Google")
+            }
+            if (BuildConfig.GOOGLE_WEB_CLIENT_ID.isBlank()) {
+                Text("Google sign-in needs Cue's OAuth setup.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        accountMessage?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         Spacer(Modifier.height(32.dp))
         Text("Appearance", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(8.dp))
