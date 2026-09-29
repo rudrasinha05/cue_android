@@ -1,9 +1,17 @@
 package com.rudrasinha.cue
 
 import android.app.Activity
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
+import android.os.Build
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Column
@@ -17,8 +25,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -27,18 +33,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -61,7 +64,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.rudrasinha.cue.data.CommitmentDao
-import com.rudrasinha.cue.data.CommitmentEntity
+import com.rudrasinha.cue.data.CommitmentActions
 import com.rudrasinha.cue.data.CueDatabase
 import com.rudrasinha.cue.data.CloudCommitments
 import com.rudrasinha.cue.auth.CueAuth
@@ -69,12 +72,9 @@ import com.rudrasinha.cue.settings.ThemePreference
 import com.rudrasinha.cue.settings.ColorTheme
 import com.rudrasinha.cue.settings.ThemeStore
 import com.rudrasinha.cue.ui.CueTheme
+import com.rudrasinha.cue.ui.CommitmentListScreen
 import com.rudrasinha.cue.ui.themeSwatch
-import java.time.LocalDate
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.util.Locale
-import java.util.UUID
+import com.rudrasinha.cue.reminders.ReminderScheduler
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.LaunchedEffect
 import io.github.jan.supabase.auth.auth
@@ -114,13 +114,30 @@ private fun CueApp(
     val userId = (session as? SessionStatus.Authenticated)?.session?.user?.id
     val ownerId = userId ?: "guest"
     val items by remember(ownerId) { commitments.observeActive(ownerId) }.collectAsState(initial = emptyList())
+    val completed by remember(ownerId) { commitments.observeCompleted(ownerId) }.collectAsState(initial = emptyList())
+    val scheduler = remember { ReminderScheduler(activity.applicationContext) }
+    val actions = remember { CommitmentActions(commitments, scheduler, cloud) }
     val scope = rememberCoroutineScope()
     var selected by rememberSaveable { mutableStateOf(Tab.TODAY) }
     var accountMessage by remember { mutableStateOf<String?>(null) }
     var accountBusy by remember { mutableStateOf(false) }
-    var guestMessage by remember { mutableStateOf<String?>(null) }
+    var reminderMessage by remember { mutableStateOf<String?>(null) }
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (!granted) reminderMessage = "Allow notifications in Android settings to see alerts."
+    }
+
+    fun perform(action: suspend () -> Boolean) {
+        scope.launch {
+            try {
+                reminderMessage = if (action()) "Saved." else "Saved offline. Sync will retry on sign-in."
+            } catch (e: Exception) {
+                reminderMessage = e.message ?: "Could not save commitment."
+            }
+        }
+    }
 
     LaunchedEffect(userId) {
+        scheduler.setActiveOwner(userId)
         if (userId != null) {
             accountBusy = true
             try {
@@ -130,8 +147,9 @@ private fun CueApp(
                 accountMessage = "Sync paused: ${e.message ?: "check your connection"}"
             } finally {
                 accountBusy = false
+                scheduler.restore()
             }
-        }
+        } else scheduler.restore()
     }
 
     CueTheme(theme, colorTheme) {
@@ -165,22 +183,24 @@ private fun CueApp(
             }
         ) { padding ->
             when (selected) {
-                Tab.TODAY -> TodayScreen(items, userId == null, guestMessage, { title ->
-                    scope.launch {
-                        try {
-                            val now = System.currentTimeMillis()
-                            commitments.upsert(listOf(CommitmentEntity(
-                                id = UUID.randomUUID().toString(), ownerId = "guest", title = title,
-                                details = null, dueAtMillis = null, timezone = ZoneId.systemDefault().id,
-                                status = "active", updatedAtMillis = now
-                            )))
-                            guestMessage = null
-                        } catch (e: Exception) {
-                            guestMessage = "Could not save locally: ${e.message ?: "try again"}"
+                Tab.TODAY, Tab.UPCOMING -> CommitmentListScreen(
+                    items, completed, selected == Tab.UPCOMING, reminderMessage,
+                    scheduler.exactAvailable(), {
+                        activity.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                            Uri.parse("package:${activity.packageName}")))
+                    },
+                    { id, title, details, due ->
+                        perform { actions.save(ownerId, id, title, details, due) }
+                        if (due != null && Build.VERSION.SDK_INT >= 33 &&
+                            activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
                         }
-                    }
-                }, padding)
-                Tab.UPCOMING -> EmptyScreen("Upcoming", "Your future commitments will appear here.", Icons.Default.CalendarMonth, padding)
+                    },
+                    { id -> perform { actions.complete(ownerId, id) } },
+                    { id -> perform { actions.snooze(ownerId, id) } },
+                    { id -> perform { actions.archive(ownerId, id) } },
+                    Modifier.padding(padding)
+                )
                 Tab.AI -> EmptyScreen("Ask Cue", "Your conversations will appear here.", Icons.Default.AutoAwesome, padding)
                 Tab.INBOX -> EmptyScreen("Inbox", "Nothing needs your review right now.", Icons.Default.Inbox, padding)
                 Tab.YOU -> YouScreen(
@@ -202,7 +222,11 @@ private fun CueApp(
                             accountBusy = true
                             try {
                                 auth.signOut()
-                                userId?.let { cloud.clearAccountCache(it) }
+                                userId?.let {
+                                    scheduler.cancelOwner(it)
+                                    scheduler.setActiveOwner(null)
+                                    cloud.clearAccountCache(it)
+                                }
                                 accountMessage = null
                             } catch (e: Exception) { accountMessage = e.message ?: "Sign-out failed." }
                             finally { accountBusy = false }
@@ -210,71 +234,6 @@ private fun CueApp(
                     },
                     padding
                 )
-            }
-        }
-    }
-}
-
-@Composable
-private fun TodayScreen(
-    commitments: List<CommitmentEntity>, isGuest: Boolean, guestMessage: String?,
-    onAddGuest: (String) -> Unit, padding: PaddingValues
-) {
-    val date = remember { LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE, d MMMM", Locale.getDefault())) }
-    var newTitle by rememberSaveable { mutableStateOf("") }
-    Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp)) {
-        Spacer(Modifier.height(22.dp))
-        Text(date.uppercase(), color = MaterialTheme.colorScheme.primary,
-            style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(8.dp))
-        Text("Today, in focus", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-        Text("A clear view of what matters next.", color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodyLarge)
-        Spacer(Modifier.height(28.dp))
-        Card(
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-            shape = RoundedCornerShape(24.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Row(Modifier.padding(24.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(36.dp),
-                    tint = MaterialTheme.colorScheme.primary)
-                Spacer(Modifier.size(20.dp))
-                Column {
-                    Text("${commitments.size} active", style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.SemiBold)
-                    Text("commitments in your space",
-                        color = MaterialTheme.colorScheme.onPrimaryContainer)
-                }
-            }
-        }
-        if (isGuest) {
-            Spacer(Modifier.height(24.dp))
-            OutlinedTextField(
-                value = newTitle, onValueChange = { newTitle = it },
-                label = { Text("Guest commitment") },
-                singleLine = true, modifier = Modifier.fillMaxWidth()
-            )
-            Spacer(Modifier.height(8.dp))
-            Button(onClick = {
-                onAddGuest(newTitle.trim())
-                newTitle = ""
-            }, enabled = newTitle.isNotBlank()) { Text("Save on this device") }
-            Text("Sign in to sync this commitment.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            guestMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        }
-        if (commitments.isEmpty()) {
-            Spacer(Modifier.height(32.dp))
-            Text("A little room to breathe", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(8.dp))
-            Text("Your day is clear. Saved commitments will show up here.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-        } else {
-            Spacer(Modifier.height(24.dp))
-            commitments.forEach { commitment ->
-                Card(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
-                    Text(commitment.title, Modifier.padding(16.dp), style = MaterialTheme.typography.bodyLarge)
-                }
             }
         }
     }
