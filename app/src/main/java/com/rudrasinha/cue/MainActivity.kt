@@ -123,7 +123,12 @@ private fun CueApp(
     var accountMessage by remember { mutableStateOf<String?>(null) }
     var accountBusy by remember { mutableStateOf(false) }
     var reminderMessage by remember { mutableStateOf<String?>(null) }
+    var notificationAllowed by remember {
+        mutableStateOf(Build.VERSION.SDK_INT < 33 ||
+            activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED)
+    }
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        notificationAllowed = granted
         if (!granted) reminderMessage = "Allow notifications in Android settings to see alerts."
     }
 
@@ -137,7 +142,8 @@ private fun CueApp(
         }
     }
 
-    LaunchedEffect(userId) {
+    LaunchedEffect(userId, session is SessionStatus.Initializing) {
+        if (session is SessionStatus.Initializing) return@LaunchedEffect
         scheduler.setActiveOwner(userId)
         if (userId != null) {
             accountBusy = true
@@ -186,7 +192,7 @@ private fun CueApp(
             when (selected) {
                 Tab.TODAY, Tab.UPCOMING -> CommitmentListScreen(
                     items, completed, selected == Tab.UPCOMING, reminderMessage,
-                    scheduler.exactAvailable(), {
+                    scheduler.exactAvailable(), notificationAllowed, {
                         activity.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
                             Uri.parse("package:${activity.packageName}")))
                     },
