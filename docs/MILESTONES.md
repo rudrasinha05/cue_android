@@ -10,7 +10,7 @@ No milestone is called complete until its behavior is demonstrated on device or 
 | M3 | Voice and natural-language capture | Tap-to-talk creates/updates via shared pipeline; ambiguity review |
 | M4 | Floating Cue | Login gate, in-app activation, overlay grant, drag/snap/edge, opacity, six actions, logout removal |
 | M5 | Notification assistant | Independent access toggle; equivalent six shared actions |
-| M6 | Deduplication and provenance | Same event from multiple sources appears once with all source links |
+| M6 | Deduplication, provenance, and history | Same event from multiple sources appears once with all source links; reminder and global History show creation, edits, delivery, snoozes, completion, and merges, including archived reminders and unavailable source states |
 | M7 | PDF/image/DOC/table import | Extraction preview, corrections, multi-event import, duplicate merge |
 | M8 | Share/selected text/user-approved capture | No silent cross-app capture; candidate review and source link |
 | M9 | Notification intelligence | Opt-in listener, per-app filtering, revocation, suggestion policy |
@@ -18,7 +18,7 @@ No milestone is called complete until its behavior is demonstrated on device or 
 | M11 | Chains, escalation, waiting for reply | Bounded alerts; completion cancels children and follow-ups |
 | M12 | Daily planner | Fixed/movable constraints, tomorrow briefing, carry forward without copies |
 | M13 | Optional wake word | Explicit opt-in, visible platform-compliant listening, graceful unsupported state |
-| M14 | Sync/security/performance | Multi-device conflict tests, RLS review, offline recovery, data export/deletion |
+| M14 | Sync/security/performance and compressed archive | Multi-device conflict tests, RLS review, offline recovery, data export/deletion; old history stored in lossless versioned batches, round-trip/count/checksum verified, searchable metadata indexed, selected ranges restored, failure recovery and user isolation tested |
 | M15 | Release QA | Device matrix, accessibility, permissions, Play policy, signed release |
 
 Active milestone: **M1**. M0 debug build and on-device launch passed. M1's local shell and storage are in progress. Account and cloud acceptance checks require a dedicated Cue Supabase project in the user-selected organization.
