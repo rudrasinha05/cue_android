@@ -39,7 +39,7 @@ private val timeFormat = DateTimeFormatter.ofPattern("d MMM, h:mm a")
 @Composable
 fun CommitmentListScreen(
     active: List<CommitmentEntity>, completed: List<CommitmentEntity>, upcoming: Boolean,
-    message: String?, exactAvailable: Boolean, onExactAccess: () -> Unit,
+    message: String?, exactAvailable: Boolean, notificationsAllowed: Boolean, onExactAccess: () -> Unit,
     onSave: (String?, String, String?, Long?) -> Unit,
     onComplete: (String) -> Unit, onSnooze: (String) -> Unit, onArchive: (String) -> Unit,
     modifier: Modifier = Modifier
@@ -61,6 +61,8 @@ fun CommitmentListScreen(
             Text("Until allowed, Android may deliver alerts later than selected.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        if (!notificationsAllowed) Text("Notifications are off. Enable them in Android settings to see alerts.",
+            color = MaterialTheme.colorScheme.error)
         message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
         Spacer(Modifier.height(16.dp))
         if (visible.isEmpty()) Text("No commitments here yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
