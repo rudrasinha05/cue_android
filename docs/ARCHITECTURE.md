@@ -5,7 +5,7 @@ This document freezes the core behavior agreed before implementation. Internal p
 ## Product and identity
 
 - Android app, floating control, and notification assistant are all named **Cue**.
-- App package: `com.rudrasinha.cue`. Native Kotlin and Jetpack Compose UI; System, Light, and Dark themes.
+- App package: `com.rudrasinha.cue`. Native Kotlin and Jetpack Compose UI. Appearance follows System, Light, or Dark. Independently, the user selects Cue Default or one of five color themes: Ocean, Forest, Sunset, Rose, Midnight. Every color theme supports all three appearance modes; preferences persist on the device.
 - Guest users can make local reminders. Sign-in is mandatory to enable the floating Cue. Activation is available only from the original app and requires explicit Android overlay permission.
 - The user chooses floating Cue, notification panel assistant, both, or neither. Turning either surface off never deletes reminders.
 
@@ -26,6 +26,7 @@ All entry points invoke one domain pipeline and one quick-action system. A commi
 
 - Room stores the local execution copy and pending sync operations. DataStore holds preferences. Exact time-sensitive user reminders use AlarmManager with the platform's applicable permission path; WorkManager handles durable maintenance and retry, never exact firing. Restore schedules after reboot and relevant timezone changes.
 - Supabase Auth, PostgreSQL with per-user RLS, Storage, and server functions provide account sync and integrations. No service-role key or AI provider key enters the APK. The repository does not assume an existing Supabase project; setup is a later milestone.
+- Google sign-in is the primary account path through Android Credential Manager and Supabase Auth. Guest mode remains available for local reminders. On sign-in, guest commitments migrate once to the authenticated owner using stable IDs; account history is restored on returning sign-in. Sign-out stops the floating Cue and removes account-bound local access while retaining server history.
 - AI is accessed through a provider-neutral server gateway. Extraction produces structured candidates and provenance; deterministic scheduling fires from local data even when the network or AI service fails.
 - Per-source opt-in governs email, calendar, notification access, microphone, overlay, and import permissions. Request permissions when the feature is enabled. Avoid unrestricted SMS or Accessibility scraping. Raw third-party content is retained only as needed under explicit settings.
 - A foreground or user-visible path must be used for any supported wake-word mode; tap-to-talk is the guaranteed voice path.

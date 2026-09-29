@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -13,6 +14,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
@@ -45,14 +51,17 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.rudrasinha.cue.data.CommitmentDao
 import com.rudrasinha.cue.data.CueDatabase
 import com.rudrasinha.cue.settings.ThemePreference
+import com.rudrasinha.cue.settings.ColorTheme
 import com.rudrasinha.cue.settings.ThemeStore
 import com.rudrasinha.cue.ui.CueTheme
+import com.rudrasinha.cue.ui.themeSwatch
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -79,11 +88,12 @@ private enum class Tab(val label: String, val icon: ImageVector) {
 @Composable
 private fun CueApp(themeStore: ThemeStore, commitments: CommitmentDao) {
     val theme by themeStore.mode.collectAsState(initial = ThemePreference.SYSTEM)
+    val colorTheme by themeStore.colorTheme.collectAsState(initial = ColorTheme.DEFAULT)
     val items by commitments.observeActive().collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
     var selected by rememberSaveable { mutableStateOf(Tab.TODAY) }
 
-    CueTheme(theme) {
+    CueTheme(theme, colorTheme) {
         Scaffold(
             topBar = {
                 TopAppBar(
@@ -118,7 +128,12 @@ private fun CueApp(themeStore: ThemeStore, commitments: CommitmentDao) {
                 Tab.UPCOMING -> EmptyScreen("Upcoming", "Your future commitments will appear here.", Icons.Default.CalendarMonth, padding)
                 Tab.AI -> EmptyScreen("Ask Cue", "Your conversations will appear here.", Icons.Default.AutoAwesome, padding)
                 Tab.INBOX -> EmptyScreen("Inbox", "Nothing needs your review right now.", Icons.Default.Inbox, padding)
-                Tab.YOU -> YouScreen(theme, { scope.launch { themeStore.set(it) } }, padding)
+                Tab.YOU -> YouScreen(
+                    theme, colorTheme,
+                    { scope.launch { themeStore.set(it) } },
+                    { scope.launch { themeStore.setColorTheme(it) } },
+                    padding
+                )
             }
         }
     }
@@ -179,7 +194,13 @@ private fun EmptyScreen(title: String, description: String, icon: ImageVector, p
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun YouScreen(theme: ThemePreference, onTheme: (ThemePreference) -> Unit, padding: PaddingValues) {
+private fun YouScreen(
+    theme: ThemePreference,
+    colorTheme: ColorTheme,
+    onTheme: (ThemePreference) -> Unit,
+    onColorTheme: (ColorTheme) -> Unit,
+    padding: PaddingValues
+) {
     Column(Modifier.fillMaxSize().padding(padding).padding(24.dp)) {
         Text("Your space", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(8.dp))
@@ -197,6 +218,35 @@ private fun YouScreen(theme: ThemePreference, onTheme: (ThemePreference) -> Unit
                     shape = SegmentedButtonDefaults.itemShape(index, ThemePreference.entries.size),
                     label = { Text(value.label) }
                 )
+            }
+        }
+        Spacer(Modifier.height(32.dp))
+        Text("Color theme", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(8.dp))
+        Text("Cue Default plus five palettes. Your choice stays on this device.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(16.dp))
+        LazyRow(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp)) {
+            items(ColorTheme.entries) { option ->
+                Card(
+                    modifier = Modifier.width(112.dp).height(94.dp).clickable { onColorTheme(option) },
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                    border = BorderStroke(
+                        2.dp,
+                        if (colorTheme == option) MaterialTheme.colorScheme.primary else Color.Transparent
+                    )
+                ) {
+                    Column(Modifier.padding(12.dp)) {
+                        Surface(
+                            modifier = Modifier.size(30.dp),
+                            shape = CircleShape,
+                            color = themeSwatch(option)
+                        ) {}
+                        Spacer(Modifier.height(8.dp))
+                        Text(option.label, style = MaterialTheme.typography.labelMedium)
+                    }
+                }
             }
         }
     }

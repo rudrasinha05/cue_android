@@ -5,7 +5,7 @@ No milestone is called complete until its behavior is demonstrated on device or 
 | Gate | Scope | Acceptance evidence |
 |---|---|---|
 | M0 | Repository, wrapper, CI, architecture, app identity | Fresh Android Studio import; debug build and launch |
-| M1 | Theme, navigation, guest/auth, local and cloud store | System/Light/Dark; guest flow; login/logout and retained history |
+| M1 | Theme, navigation, guest/auth, local and cloud store | Cue Default + five color themes in System/Light/Dark; Google login/logout, guest migration and retained history |
 | M2 | Commitment CRUD, local scheduling | Add/edit/complete/snooze; alert fires offline; reboot recovery |
 | M3 | Voice and natural-language capture | Tap-to-talk creates/updates via shared pipeline; ambiguity review |
 | M4 | Floating Cue | Login gate, in-app activation, overlay grant, drag/snap/edge, opacity, six actions, logout removal |
@@ -21,4 +21,4 @@ No milestone is called complete until its behavior is demonstrated on device or 
 | M14 | Sync/security/performance | Multi-device conflict tests, RLS review, offline recovery, data export/deletion |
 | M15 | Release QA | Device matrix, accessibility, permissions, Play policy, signed release |
 
-Active milestone: **M1**. The M0 debug build passed in GitHub Actions; an on-device launch check remains. M1's local shell and storage are in progress. Its account and cloud acceptance checks remain blocked until a Cue-specific Supabase project is chosen and connected.
+Active milestone: **M1**. M0 debug build and on-device launch passed. M1's local shell and storage are in progress. Account and cloud acceptance checks require a dedicated Cue Supabase project in the user-selected organization.
