@@ -1,6 +1,6 @@
 # M1 account setup
 
-Cue's dedicated Supabase project is `gukhuakkguzzhrvtyszx` in BABA GROUPS, region `ap-south-1`. Its project URL and **publishable** key are compiled into the Android app; these are public client identifiers. The server-side secret and Google OAuth client secret must stay in Google Cloud/Supabase, never in the repository or APK.
+Cue's dedicated Supabase project is `gukhuakkguzzhrvtyszx` in BABA GROUPS, region `ap-south-1`. Use the Google Cloud project [`lofty-ivy-393607`](https://console.cloud.google.com/home/dashboard?project=lofty-ivy-393607) for Cue's OAuth configuration. Its Supabase project URL and **publishable** key are compiled into the Android app; these are public client identifiers. The server-side secret and Google OAuth client secret must stay in Google Cloud/Supabase, never in the repository or APK.
 
 The [M1 cloud migrations](M1_CLOUD_SCHEMA.md) created `commitments`, `sources`, and `reminder_events` and removed default broad table grants. Each table has owner-scoped RLS; `anon` has no table access. Signed-in clients can read/insert/update commitments and sources, and read/insert history events. They cannot directly delete or truncate the records. The Android sync uses stable UUIDs for guest records, uploads them idempotently after sign-in, then restores the signed-in user's records; sign-out clears account-bound Room rows. Completed and archived commitments remain available to restore.
 
