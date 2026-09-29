@@ -16,6 +16,7 @@ import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.Google
 import io.github.jan.supabase.auth.providers.builtin.IDToken
 import io.github.jan.supabase.postgrest.Postgrest
+import java.security.MessageDigest
 import java.security.SecureRandom
 
 class CueAuth(context: Context) {
@@ -29,8 +30,11 @@ class CueAuth(context: Context) {
         check(BuildConfig.GOOGLE_WEB_CLIENT_ID.isNotBlank()) { "Google login needs Cue's Web client ID." }
         val nonce = ByteArray(32).also { SecureRandom().nextBytes(it) }
             .let { Base64.encodeToString(it, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING) }
+        val hashedNonce = MessageDigest.getInstance("SHA-256")
+            .digest(nonce.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it.toInt() and 0xff) }
         val option = GetSignInWithGoogleOption.Builder(BuildConfig.GOOGLE_WEB_CLIENT_ID)
-            .setNonce(nonce).build()
+            .setNonce(hashedNonce).build()
         val response = credentials.getCredential(activity,
             GetCredentialRequest.Builder().addCredentialOption(option).build())
         val credential = response.credential as? CustomCredential
