@@ -1,4 +1,4 @@
-# Cue architecture v1.0
+# Cue architecture v1.1
 
 This document freezes the core behavior agreed before implementation. Internal packages can change when a milestone requires it, provided these contracts remain intact. New features go to the backlog for a later phase.
 
@@ -37,7 +37,15 @@ Voice Reminder, Quick Reminder, Import/Scan, Ask AI, My Day, Assistant Settings.
 
 ## Data contract
 
-The canonical entities are `Commitment`, `Occurrence`, `ReminderChain`, `Alert`, `Source`, `Candidate`, `DuplicateDecision`, `DailyPlan`, `PlanBlock`, `IntegrationConnection`, `Device`, and `UserPreference`. Every entity is scoped to a user or guest-local profile. Each source has a stable origin ID/hash for ingestion idempotency. Dates store instants plus original timezone and user intent. Ambiguous dates remain candidates for confirmation.
+The canonical entities are `Commitment`, `Occurrence`, `ReminderChain`, `Alert`, `Source`, `ReminderEvent`, `HistoryBatch`, `Candidate`, `DuplicateDecision`, `DailyPlan`, `PlanBlock`, `IntegrationConnection`, `Device`, and `UserPreference`. Every entity is scoped to a user or guest-local profile. Each source has a stable origin ID/hash for ingestion idempotency. Dates store instants plus original timezone and user intent. Ambiguous dates remain candidates for confirmation.
+
+## Reminder history and source references
+
+- Every commitment exposes a chronological **History** view, including completed, cancelled, and archived reminders. A global History screen can search and filter by date, status, and source. Each timeline item shows what changed, when, and how; a **Sources** section links to the original input when the user still has access. Returning account users can retrieve their synced history.
+- A `Source` belongs to the user's profile and links to one canonical commitment; several sources can link to the same commitment after deduplication. Store source type (manual, voice, share, document, email, calendar, notification, etc.), a stable external ID or content fingerprint, captured time, short user-readable excerpt/title, and an optional authorized URI or storage reference. Keep the source's original identifier through a merge, and record the merge in history. If a source is deleted or access is revoked, show its retained metadata and an unavailable state rather than a broken link. Raw source content follows the user's permission and retention settings.
+- `ReminderEvent` is append-only and scoped to the user and commitment. Record creation, edits, import/merge, schedule changes, alert delivery, snooze, completion, cancellation, and sync conflict resolution with an event ID, occurred-at time, event type, minimal before/after change, actor or entry point, linked source IDs, and idempotency key. Retries must not duplicate events. Do not copy full email/document bodies or secrets into the event stream. History is an audit trail for future reference; the current `Commitment` and `ReminderChain` remain the source of truth for scheduling.
+- **History must be compressed.** Keep recent events directly queryable. Compact older events into immutable `HistoryBatch` records per user and bounded time/commitment range using a versioned, lossless codec (initially GZIP over canonical serialized events). Each batch has its owner, commitment ID, first/last event time, event count, schema/codec versions, and checksum. Index this small metadata plus searchable titles/status/source pointers; do not scan or decompress every batch to show the history list. Decompress only selected ranges or reminder details. Compression must preserve exact events, order, timestamps, and source IDs; an AI summary may be shown as a convenience but never replace the recoverable record.
+- Compaction is idempotent: write the compressed batch, verify count/checksum and round-trip decoding, then atomically mark the original range compacted and remove its uncompressed copies. A failed job leaves the original events available. Sync batches and metadata under per-user access rules; Room caches current/recent history for offline use, while older batches are fetched on demand and may be cached locally. Export reconstructs the full history; account/data deletion removes events, batches, indexes, and source references. Sign-out clears account-bound local caches without deleting the server archive.
 
 ## Product invariants
 
@@ -48,3 +56,4 @@ The canonical entities are `Commitment`, `Occurrence`, `ReminderChain`, `Alert`,
 5. Sign-out removes the floating control and account-bound access without deleting synced history.
 6. Permission revocation degrades the relevant feature and leaves existing local reminders intact.
 7. UI surfaces never write alarm/database state independently of the shared domain use cases.
+8. Every reminder retains a traceable source and reconstructable change history. Compaction cannot silently lose events or change the active reminder schedule.
