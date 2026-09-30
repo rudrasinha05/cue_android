@@ -128,7 +128,12 @@ fun HistoryScreen(events: List<ReminderEventEntity>, sources: List<SourceEntity>
         OutlinedTextField(query, { query = it }, singleLine = true,
             placeholder = { Text("Search titles, changes or sources") },
             leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-            modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp))
+            modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = pale, unfocusedTextColor = pale, cursorColor = purple,
+                focusedBorderColor = purple, unfocusedBorderColor = subdued,
+                focusedPlaceholderColor = subdued, unfocusedPlaceholderColor = subdued,
+                focusedLeadingIconColor = purple, unfocusedLeadingIconColor = subdued))
         Spacer(Modifier.height(18.dp))
         if (visible.isEmpty()) {
             Surface(shape = RoundedCornerShape(22.dp), color = panel) {
@@ -165,6 +170,7 @@ fun HistoryScreen(events: List<ReminderEventEntity>, sources: List<SourceEntity>
     selected?.let { event ->
         val source = sourceByReminder[event.commitmentId]?.firstOrNull()
         AlertDialog(onDismissRequest = { selected = null },
+            containerColor = panel, titleContentColor = pale, textContentColor = subdued,
             title = { Text(event.snapshot().optString("title", "Reminder")) },
             text = {
                 Column {

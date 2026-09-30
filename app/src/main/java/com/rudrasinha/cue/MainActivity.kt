@@ -64,6 +64,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -229,20 +230,29 @@ private fun CueApp(
     CueTheme(theme, colorTheme) {
         Scaffold(
             topBar = {
-                if (selected != Tab.TODAY && selected != Tab.UPCOMING) TopAppBar(
-                    title = { Text("cue", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.headlineMedium) },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
-                    actions = {
-                        Surface(
-                            modifier = Modifier.padding(end = 20.dp),
-                            shape = RoundedCornerShape(12.dp),
-                            color = MaterialTheme.colorScheme.secondaryContainer
-                        ) {
-                            Text(if (userId == null) "On this device" else "Sync on", modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                style = MaterialTheme.typography.labelSmall)
+                if (selected != Tab.TODAY && selected != Tab.UPCOMING) {
+                    val darkSection = selected == Tab.AI || selected == Tab.INBOX
+                    TopAppBar(
+                        title = { Text("cue", fontWeight = FontWeight.Bold,
+                            color = if (darkSection) Color(0xFFF8F6FF) else Color.Unspecified,
+                            style = MaterialTheme.typography.headlineMedium) },
+                        colors = TopAppBarDefaults.topAppBarColors(containerColor =
+                            if (darkSection) Color(0xFF101017) else MaterialTheme.colorScheme.background),
+                        actions = {
+                            Surface(
+                                modifier = Modifier.padding(end = 20.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (darkSection) Color(0xFF383049)
+                                    else MaterialTheme.colorScheme.secondaryContainer
+                            ) {
+                                Text(if (userId == null) "On this device" else "Sync on",
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    color = if (darkSection) Color(0xFFB69CFF) else Color.Unspecified,
+                                    style = MaterialTheme.typography.labelSmall)
+                            }
                         }
-                    }
-                )
+                    )
+                }
             },
             bottomBar = {
                 NavigationBar {
