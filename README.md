@@ -4,7 +4,7 @@ Cue is an Android reminder assistant that helps you capture what matters, get lo
 
 ## Project status
 
-**Five delivery phases: P1 foundation functionally accepted, visual review open; P2 reminders in progress.** The app has a five-tab shell, persistent System/Light/Dark and six color themes, a guest-local Room database, Google sign-in and a dedicated owner-scoped Supabase project. A guest reminder can be created and migrated to the signed-in account. P2 adds editing, completion, snooze, and offline alerts. Overlay, AI, import, and integrations follow in P3–P5. See [the roadmap](docs/MILESTONES.md).
+**Five delivery phases: P1 foundation functionally accepted, visual review open; P2 reminders in device QA; P3/P4 implementation started.** The app has a five-tab shell, persistent System/Light/Dark and six color themes, guest-local Room storage, Google sign-in and owner-scoped Supabase sync. Reminders can be edited, completed, snoozed and alerted offline; Upcoming has a month calendar. The AI tab now offers voice transcription, quick capture and text/CSV/TSV/Markdown/DOCX import. Android text sharing and selected text enter the same review sheet. Inbox shows source and change history; older synced local events are losslessly compressed. PDF/image capture, floating controls, suggestions and release QA remain pending. See [the roadmap](docs/MILESTONES.md).
 
 ## Open in Android Studio
 

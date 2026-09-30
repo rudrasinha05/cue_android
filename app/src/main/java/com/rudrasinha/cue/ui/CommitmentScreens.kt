@@ -32,6 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.rudrasinha.cue.data.CommitmentEntity
+import com.rudrasinha.cue.data.CaptureOrigin
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -62,14 +63,17 @@ private enum class ReminderView(val label: String, val icon: ImageVector, val ti
     ALL("All", Icons.Filled.ViewAgenda, aqua)
 }
 
+data class CaptureDraft(val id: String, val text: String, val origin: CaptureOrigin)
+
 @Composable
 fun CommitmentListScreen(
     active: List<CommitmentEntity>, completed: List<CommitmentEntity>, upcoming: Boolean,
     message: String?, exactAvailable: Boolean, notificationsAllowed: Boolean,
     onExactAccess: () -> Unit, onNotificationAccess: () -> Unit,
-    onSave: (String?, String, String?, Long?) -> Unit,
+    onSave: (String?, String, String?, Long?, CaptureOrigin) -> Unit,
     onComplete: (String) -> Unit, onSnooze: (String) -> Unit, onArchive: (String) -> Unit,
     signedIn: Boolean, onSync: () -> Unit, onSettings: () -> Unit,
+    externalDraft: CaptureDraft?, onCaptureDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var selectedView by remember { mutableStateOf(ReminderView.ALL) }
@@ -81,6 +85,9 @@ fun CommitmentListScreen(
     var sortByTitle by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<CommitmentEntity?>(null) }
     var draftTitle by remember { mutableStateOf("") }
+    var draftDetails by remember { mutableStateOf("") }
+    var draftOrigin by remember { mutableStateOf(CaptureOrigin("manual")) }
+    var draftId by remember { mutableStateOf("") }
     var editorOpen by remember { mutableStateOf(false) }
     val today = LocalDate.now()
     val now = System.currentTimeMillis()
@@ -90,7 +97,20 @@ fun CommitmentListScreen(
     fun openEditor(item: CommitmentEntity? = null, suggestedTitle: String = "") {
         editing = item
         draftTitle = suggestedTitle
+        draftDetails = ""
+        draftOrigin = CaptureOrigin("manual")
+        draftId = java.util.UUID.randomUUID().toString()
         editorOpen = true
+    }
+    LaunchedEffect(externalDraft?.id) {
+        if (externalDraft != null) {
+            editing = null
+            draftTitle = externalDraft.text.lineSequence().firstOrNull().orEmpty().take(100)
+            draftDetails = externalDraft.text.take(2000).takeIf { it != draftTitle }.orEmpty()
+            draftOrigin = externalDraft.origin
+            draftId = externalDraft.id
+            editorOpen = true
+        }
     }
     fun matching(view: ReminderView): List<CommitmentEntity> = when (view) {
         ReminderView.TODAY -> active.filter { dateOf(it) == today }
@@ -277,11 +297,12 @@ fun CommitmentListScreen(
         }
     }
 
-    if (editorOpen) ReminderEditor(editing, draftTitle,
+    if (editorOpen) ReminderEditor(editing, draftTitle, draftDetails, draftId,
         if (upcoming) selectedDate else today,
-        onDismiss = { editorOpen = false }) { title, details, due ->
-        onSave(editing?.id, title, details, due)
+        onDismiss = { editorOpen = false; if (externalDraft != null) onCaptureDismiss() }) { title, details, due ->
+        onSave(editing?.id, title, details, due, draftOrigin)
         editorOpen = false
+        if (externalDraft != null) onCaptureDismiss()
     }
 }
 
@@ -437,17 +458,18 @@ private fun CalendarGrid(month: YearMonth, selectedDate: LocalDate,
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ReminderEditor(item: CommitmentEntity?, suggestedTitle: String, initialDate: LocalDate,
+private fun ReminderEditor(item: CommitmentEntity?, suggestedTitle: String, suggestedDetails: String,
+    draftId: String, initialDate: LocalDate,
     onDismiss: () -> Unit, onSave: (String, String?, Long?) -> Unit) {
     val initialDue = item?.dueAtMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()) }
     val suggestedStart = remember { LocalDateTime.now().plusMinutes(10) }
     val startDate = maxOf(initialDate, suggestedStart.toLocalDate())
-    var title by remember(item?.id, suggestedTitle) { mutableStateOf(item?.title ?: suggestedTitle) }
-    var details by remember(item?.id) { mutableStateOf(item?.details.orEmpty()) }
+    var title by remember(item?.id, draftId) { mutableStateOf(item?.title ?: suggestedTitle) }
+    var details by remember(item?.id, draftId) { mutableStateOf(item?.details ?: suggestedDetails) }
     var alertEnabled by remember(item?.id) { mutableStateOf(initialDue != null) }
     var chosenDate by remember(item?.id) { mutableStateOf(initialDue?.toLocalDate() ?: startDate) }
     var month by remember(item?.id) { mutableStateOf(YearMonth.from(chosenDate)) }
-    var showNote by remember(item?.id) { mutableStateOf(!item?.details.isNullOrBlank()) }
+    var showNote by remember(item?.id, draftId) { mutableStateOf(details.isNotBlank()) }
     var showCalendar by remember { mutableStateOf(false) }
     var showTime by remember { mutableStateOf(false) }
     val titleFocus = remember { FocusRequester() }

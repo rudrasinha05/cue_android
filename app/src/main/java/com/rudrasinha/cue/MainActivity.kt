@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Build
 import android.provider.Settings
+import android.speech.RecognizerIntent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -70,29 +71,48 @@ import com.rudrasinha.cue.data.CommitmentDao
 import com.rudrasinha.cue.data.CommitmentActions
 import com.rudrasinha.cue.data.CueDatabase
 import com.rudrasinha.cue.data.CloudCommitments
+import com.rudrasinha.cue.data.CaptureOrigin
+import com.rudrasinha.cue.data.HistoryArchive
 import com.rudrasinha.cue.auth.CueAuth
 import com.rudrasinha.cue.settings.ThemePreference
 import com.rudrasinha.cue.settings.ColorTheme
 import com.rudrasinha.cue.settings.ThemeStore
 import com.rudrasinha.cue.ui.CueTheme
 import com.rudrasinha.cue.ui.CommitmentListScreen
+import com.rudrasinha.cue.ui.CaptureDraft
+import com.rudrasinha.cue.ui.CaptureHub
+import com.rudrasinha.cue.ui.HistoryScreen
 import com.rudrasinha.cue.ui.themeSwatch
 import com.rudrasinha.cue.reminders.ReminderScheduler
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.util.UUID
 import androidx.compose.runtime.LaunchedEffect
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.status.SessionStatus
 
 class MainActivity : ComponentActivity() {
     private var permissionEpoch by mutableIntStateOf(0)
+    private var captureDraft by mutableStateOf<CaptureDraft?>(null)
+
+    fun queueCapture(draft: CaptureDraft) { captureDraft = draft }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        sharedText(intent)?.let(::queueCapture)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        captureDraft = sharedText(intent)
         val themeStore = ThemeStore(applicationContext)
         val database = CueDatabase.get(applicationContext)
         val auth = CueAuth(applicationContext)
         val cloud = CloudCommitments(database, auth.client)
-        setContent { CueApp(themeStore, database.commitments(), auth, cloud, this, permissionEpoch) }
+        setContent { CueApp(themeStore, database, auth, cloud, this, permissionEpoch,
+            captureDraft, { captureDraft = null }) }
     }
 
     override fun onResume() {
@@ -113,12 +133,15 @@ private enum class Tab(val label: String, val icon: ImageVector) {
 @Composable
 private fun CueApp(
     themeStore: ThemeStore,
-    commitments: CommitmentDao,
+    database: CueDatabase,
     auth: CueAuth,
     cloud: CloudCommitments,
     activity: Activity,
-    permissionEpoch: Int
+    permissionEpoch: Int,
+    captureDraft: CaptureDraft?,
+    onCaptureDismiss: () -> Unit
 ) {
+    val commitments = database.commitments()
     val theme by themeStore.mode.collectAsState(initial = ThemePreference.SYSTEM)
     val colorTheme by themeStore.colorTheme.collectAsState(initial = ColorTheme.DEFAULT)
     val session by auth.client.auth.sessionStatus.collectAsState(initial = SessionStatus.Initializing)
@@ -126,13 +149,38 @@ private fun CueApp(
     val ownerId = userId ?: "guest"
     val items by remember(ownerId) { commitments.observeActive(ownerId) }.collectAsState(initial = emptyList())
     val completed by remember(ownerId) { commitments.observeCompleted(ownerId) }.collectAsState(initial = emptyList())
+    val history by remember(ownerId) { database.history().observeEvents(ownerId) }.collectAsState(initial = emptyList())
+    val sources by remember(ownerId) { database.history().observeSources(ownerId) }.collectAsState(initial = emptyList())
+    val batches by remember(ownerId) { database.history().observeBatches(ownerId) }.collectAsState(initial = emptyList())
     val scheduler = remember { ReminderScheduler(activity.applicationContext) }
-    val actions = remember { CommitmentActions(commitments, scheduler, cloud) }
+    val actions = remember { CommitmentActions(database, scheduler, cloud) }
     val scope = rememberCoroutineScope()
     var selected by rememberSaveable { mutableStateOf(Tab.TODAY) }
+    LaunchedEffect(captureDraft?.id) { if (captureDraft != null) selected = Tab.TODAY }
     var accountMessage by remember { mutableStateOf<String?>(null) }
     var accountBusy by remember { mutableStateOf(false) }
     var reminderMessage by remember { mutableStateOf<String?>(null) }
+    val voiceLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val spoken = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            ?.firstOrNull()?.trim()
+        if (!spoken.isNullOrBlank()) activity.let {
+            (it as MainActivity).queueCapture(CaptureDraft(UUID.randomUUID().toString(), spoken,
+                CaptureOrigin("voice", "Voice note", spoken)))
+        } else if (result.resultCode == Activity.RESULT_OK) reminderMessage = "No speech was captured. Try again."
+    }
+    val documentLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) scope.launch {
+            try {
+                runCatching { activity.contentResolver.takePersistableUriPermission(uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+                val draft = withContext(Dispatchers.IO) { importedText(activity, uri) }
+                (activity as MainActivity).queueCapture(draft)
+            } catch (e: Exception) {
+                reminderMessage = e.message ?: "Could not read that document."
+                selected = Tab.AI
+            }
+        }
+    }
     fun notificationsEnabled(): Boolean {
         val manager = activity.getSystemService(NotificationManager::class.java)
         val granted = Build.VERSION.SDK_INT < 33 ||
@@ -165,6 +213,7 @@ private fun CueApp(
             accountBusy = true
             try {
                 cloud.restoreAndClaim(userId)
+                HistoryArchive(database).compact(userId)
                 accountMessage = "Account synced."
             } catch (e: Exception) {
                 accountMessage = "Sync paused: ${e.message ?: "check your connection"}"
@@ -218,8 +267,8 @@ private fun CueApp(
                             putExtra(Settings.EXTRA_APP_PACKAGE, activity.packageName)
                         })
                     },
-                    { id, title, details, due ->
-                        perform("Reminder saved.") { actions.save(ownerId, id, title, details, due) }
+                    { id, title, details, due, origin ->
+                        perform("Reminder saved.") { actions.save(ownerId, id, title, details, due, origin) }
                         if (due != null && Build.VERSION.SDK_INT >= 33 &&
                             activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -242,10 +291,27 @@ private fun CueApp(
                         }
                     },
                     { selected = Tab.YOU },
+                    captureDraft, onCaptureDismiss,
                     Modifier.padding(padding)
                 )
-                Tab.AI -> EmptyScreen("Ask Cue", "Your conversations will appear here.", Icons.Default.AutoAwesome, padding)
-                Tab.INBOX -> EmptyScreen("Inbox", "Nothing needs your review right now.", Icons.Default.Inbox, padding)
+                Tab.AI -> CaptureHub(onVoice = {
+                    try {
+                        voiceLauncher.launch(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                            putExtra(RecognizerIntent.EXTRA_PROMPT, "What would you like to remember?")
+                        })
+                    } catch (_: android.content.ActivityNotFoundException) {
+                        reminderMessage = "Speech recognition isn't available on this device."
+                    }
+                }, onDocument = {
+                    documentLauncher.launch(arrayOf("text/plain", "text/csv", "text/tab-separated-values",
+                        "text/markdown", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"))
+                }, onQuick = {
+                    (activity as MainActivity).queueCapture(CaptureDraft(UUID.randomUUID().toString(), "",
+                        CaptureOrigin("manual")))
+                }, message = reminderMessage, modifier = Modifier.padding(padding))
+                Tab.INBOX -> HistoryScreen(history, sources, batches, Modifier.padding(padding))
                 Tab.YOU -> YouScreen(
                     theme, colorTheme,
                     { scope.launch { themeStore.set(it) } },

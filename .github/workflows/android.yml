@@ -17,4 +17,4 @@ jobs:
           java-version: '17'
       - uses: android-actions/setup-android@v4
       - run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
-      - run: ./gradlew :app:assembleDebug --stacktrace
+      - run: ./gradlew :app:assembleDebug :app:testDebugUnitTest --stacktrace
