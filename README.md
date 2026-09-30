@@ -9,7 +9,7 @@ Cue is an Android reminder assistant that helps you capture what matters, get lo
 ## Open in Android Studio
 
 1. Clone `https://github.com/rudrasinha05/cue_android.git` (or use **Get from VCS** in Android Studio).
-2. Open the repository root. Use JDK 17 and install Android SDK 35 through SDK Manager.
+2. Switch to `develop`, then open the repository root. Use JDK 17 and install Android SDK 35 through SDK Manager.
 3. Sync Gradle, then run the `app` configuration on an Android 8.0+ emulator or device.
 
 The repository includes the Gradle wrapper, so no system Gradle installation is needed. Do not commit `local.properties`, signing keys, Supabase secrets, or AI provider keys.
@@ -20,7 +20,7 @@ See [Cue account setup](docs/M1_ACCOUNT_SETUP.md) for the Google Cloud and Supab
 
 ## Working agreement
 
-- `main` is the stable integration branch. Work on a short-lived feature branch and merge only after its milestone checks pass.
-- Follow [the frozen architecture](docs/ARCHITECTURE.md) and [milestone acceptance criteria](docs/MILESTONES.md). Put new ideas into the later-phase backlog before changing active milestone scope.
+- `develop` is the single branch for ongoing implementation and Android Studio sync. `main` holds accepted releases. Merge from `develop` to `main` after the relevant acceptance gates; do not create a branch per phase.
+- Follow [the frozen architecture](docs/ARCHITECTURE.md) and [phase acceptance criteria](docs/MILESTONES.md). Put new ideas into the later-phase backlog before changing active phase scope.
 - All reminder entry points call the same domain pipeline. The Android app owns local alarm execution; remote AI services never fire reminders.
 - Log feature status honestly. A visible screen or mock data does not count as a completed integration.

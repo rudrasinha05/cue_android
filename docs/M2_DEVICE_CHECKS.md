@@ -1,6 +1,6 @@
 # P2 reminder device checks
 
-P2 is in progress on `feature/m2-commitments-alarms` (the branch keeps its historical M2 name). Do not merge this draft until these checks pass on an Android device or emulator. Update the app in place so the Room v1→v2 migration can be checked with an existing guest reminder.
+P2 is in progress on `develop`. Do not merge it to `main` until these checks pass on an Android device or emulator. Update the app in place so the Room v1→v2 migration can be checked with an existing guest reminder.
 
 1. Open **Reminders** and confirm the previous M1 item remains. Tap **New reminder** and add a title, optional note, and an alert 3–5 minutes ahead. Allow notifications on Android 13+ and tap **Allow precise timing** if Android shows that option. The new item appears in Reminders and Upcoming.
 2. Turn on airplane mode before the due time. The notification must appear with the correct title. Turn airplane mode off. Edit the title and time of another item, then use **More → Remind in 10 minutes**; only the latest scheduled alert should fire.
