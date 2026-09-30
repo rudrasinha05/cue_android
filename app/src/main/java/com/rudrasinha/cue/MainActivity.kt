@@ -178,7 +178,7 @@ private fun CueApp(
     CueTheme(theme, colorTheme) {
         Scaffold(
             topBar = {
-                TopAppBar(
+                if (selected != Tab.TODAY && selected != Tab.UPCOMING) TopAppBar(
                     title = { Text("cue", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.headlineMedium) },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
                     actions = {
