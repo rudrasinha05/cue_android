@@ -75,6 +75,7 @@ fun CommitmentListScreen(
     onExactAccess: () -> Unit, onNotificationAccess: () -> Unit,
     onSave: (String?, String, String?, Long?, CaptureOrigin) -> Unit,
     onComplete: (String) -> Unit, onSnooze: (String) -> Unit, onArchive: (String) -> Unit,
+    onDelete: (String) -> Unit,
     signedIn: Boolean, onSync: () -> Unit, onSettings: () -> Unit,
     externalDraft: CaptureDraft?, onCaptureDismiss: () -> Unit,
     modifier: Modifier = Modifier
@@ -285,7 +286,8 @@ fun CommitmentListScreen(
                                         onEdit = { openEditor(item) },
                                         onComplete = { onComplete(item.id) },
                                         onSnooze = { onSnooze(item.id) },
-                                        onArchive = { onArchive(item.id) })
+                                        onArchive = { onArchive(item.id) },
+                                        onDelete = { onDelete(item.id) })
                                     Spacer(Modifier.height(10.dp))
                                 }
                             }
@@ -412,8 +414,10 @@ private fun Notice(text: String, actionLabel: String, onAction: () -> Unit) {
 
 @Composable
 private fun ReminderCard(item: CommitmentEntity, now: Long, completed: Boolean,
-    onEdit: () -> Unit, onComplete: () -> Unit, onSnooze: () -> Unit, onArchive: () -> Unit) {
+    onEdit: () -> Unit, onComplete: () -> Unit, onSnooze: () -> Unit,
+    onArchive: () -> Unit, onDelete: () -> Unit) {
     var menuOpen by remember { mutableStateOf(false) }
+    var deletePrompt by remember(item.id) { mutableStateOf(false) }
     val accent = when {
         completed -> aqua
         item.dueAtMillis == null -> violet
@@ -457,23 +461,44 @@ private fun ReminderCard(item: CommitmentEntity, now: Long, completed: Boolean,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
-            if (!completed) Box {
+            Box {
                 IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(40.dp)) {
                     Icon(Icons.Filled.MoreVert, contentDescription = "Actions for ${item.title}",
                         tint = muted)
                 }
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                    DropdownMenuItem(text = { Text("Edit") },
-                        onClick = { menuOpen = false; onEdit() })
-                    if (item.dueAtMillis != null) DropdownMenuItem(
-                        text = { Text("Remind in 10 minutes") },
-                        onClick = { menuOpen = false; onSnooze() })
-                    DropdownMenuItem(text = { Text("Archive") },
-                        onClick = { menuOpen = false; onArchive() })
+                    if (!completed) {
+                        DropdownMenuItem(text = { Text("Edit") },
+                            onClick = { menuOpen = false; onEdit() })
+                        if (item.dueAtMillis != null) DropdownMenuItem(
+                            text = { Text("Remind in 10 minutes") },
+                            onClick = { menuOpen = false; onSnooze() })
+                        DropdownMenuItem(text = { Text("Archive") },
+                            onClick = { menuOpen = false; onArchive() })
+                        HorizontalDivider()
+                    }
+                    DropdownMenuItem(
+                        text = { Text("Delete", color = coral) },
+                        leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null, tint = coral) },
+                        onClick = { menuOpen = false; deletePrompt = true })
                 }
             }
         }
     }
+    if (deletePrompt) AlertDialog(
+        onDismissRequest = { deletePrompt = false },
+        title = { Text("Delete this reminder?") },
+        text = { Text("It will disappear from your reminder lists. Its history stays in Inbox.") },
+        confirmButton = {
+            TextButton(onClick = { deletePrompt = false; onDelete() }) {
+                Text("Delete", color = coral)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = { deletePrompt = false }) { Text("Cancel") }
+        },
+        containerColor = cardColor, titleContentColor = ivory, textContentColor = muted
+    )
 }
 
 @Composable

@@ -61,11 +61,20 @@ class CommitmentActions(
         it.copy(status = "active", dueAtMillis = System.currentTimeMillis() + 10 * 60_000L)
     }
 
+    suspend fun delete(ownerId: String, id: String): Boolean =
+        change(ownerId, id, "deleted", allowCompleted = true) {
+            it.copy(status = "cancelled", dueAtMillis = null)
+        }
+
     private suspend fun change(
-        ownerId: String, id: String, type: String, transform: (CommitmentEntity) -> CommitmentEntity
+        ownerId: String, id: String, type: String, allowCompleted: Boolean = false,
+        transform: (CommitmentEntity) -> CommitmentEntity
     ): Boolean {
         val old = dao.byId(id) ?: error("Reminder is unavailable.")
-        require(old.ownerId == ownerId && old.status == "active") { "Reminder is unavailable." }
+        require(old.ownerId == ownerId &&
+            (old.status == "active" || (allowCompleted && old.status == "completed"))) {
+            "Reminder is unavailable."
+        }
         val next = transform(old).copy(
             updatedAtMillis = maxOf(System.currentTimeMillis(), old.updatedAtMillis + 1),
             dirty = ownerId != "guest"
