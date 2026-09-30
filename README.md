@@ -1,10 +1,10 @@
 # Cue
 
-Cue is an Android reminder assistant that captures commitments, links duplicate sources, schedules reliable local reminders, and helps plan the day. The floating assistant is also called **Cue**.
+Cue is an Android reminder assistant that helps you capture what matters, get local alerts, and keep your reminders when you sign in. The floating assistant is also called **Cue**.
 
 ## Project status
 
-**M0 and M1 accepted; M2 in progress.** The app has a five-tab shell, persistent System/Light/Dark and six color themes, a guest-local Room database, Google sign-in and a dedicated owner-scoped Supabase project. A guest commitment can be created and migrated to the signed-in account. M2 adds full commitment editing, completion, snooze, and offline alerts. Overlay, AI, import, and integrations are later milestones.
+**M0 and M1 accepted; M2 in progress.** The app has a five-tab shell, persistent System/Light/Dark and six color themes, a guest-local Room database, Google sign-in and a dedicated owner-scoped Supabase project. A guest reminder can be created and migrated to the signed-in account. M2 adds editing, completion, snooze, and offline alerts. Overlay, AI, import, and integrations are later milestones.
 
 ## Open in Android Studio
 

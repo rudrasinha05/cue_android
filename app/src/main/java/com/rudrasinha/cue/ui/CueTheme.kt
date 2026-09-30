@@ -62,8 +62,10 @@ fun CueTheme(preference: ThemePreference, colorTheme: ColorTheme, content: @Comp
             primaryContainer = colors.darkContainer,
             onPrimaryContainer = colors.darkPrimary,
             secondaryContainer = colors.darkContainer,
+            onSecondaryContainer = colors.darkPrimary,
             background = colors.darkBackground,
-            surface = colors.darkBackground
+            surface = Color(0xFF24222B),
+            outlineVariant = Color(0xFF48444F)
         )
     } else {
         lightColorScheme(
@@ -72,8 +74,10 @@ fun CueTheme(preference: ThemePreference, colorTheme: ColorTheme, content: @Comp
             primaryContainer = colors.lightContainer,
             onPrimaryContainer = colors.primary,
             secondaryContainer = colors.lightContainer,
+            onSecondaryContainer = colors.primary,
             background = colors.lightBackground,
-            surface = colors.lightBackground
+            surface = Color.White,
+            outlineVariant = Color(0xFFE6E3E9)
         )
     }
     MaterialTheme(colorScheme = scheme, content = content)

@@ -22,6 +22,8 @@ Share / text / voice / email / notification / document / calendar
 
 All entry points invoke one domain pipeline and one quick-action system. A commitment is the canonical task, event, deadline, follow-up, or routine; multiple source records may point to it. A reminder chain belongs to one commitment. Completion and cancellation atomically stop outstanding alerts. Deduplication decisions are transactional on the backend and idempotent on-device.
 
+**User-facing language:** call the item a **reminder** in navigation, forms, alerts, and help text. Commitment remains the internal canonical entity and database concept.
+
 ## Android and backend
 
 - Room stores the local execution copy and pending sync operations. DataStore holds preferences. Exact time-sensitive user reminders use AlarmManager with the platform's applicable permission path; WorkManager handles durable maintenance and retry, never exact firing. Restore schedules after reboot and relevant timezone changes.

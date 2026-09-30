@@ -25,6 +25,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -50,6 +52,7 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -93,7 +96,7 @@ class MainActivity : ComponentActivity() {
 }
 
 private enum class Tab(val label: String, val icon: ImageVector) {
-    TODAY("Today", Icons.Default.Today),
+    TODAY("Reminders", Icons.Default.Today),
     UPCOMING("Upcoming", Icons.Default.CalendarMonth),
     AI("AI", Icons.Default.AutoAwesome),
     INBOX("Inbox", Icons.Default.Inbox),
@@ -132,12 +135,12 @@ private fun CueApp(
         if (!granted) reminderMessage = "Allow notifications in Android settings to see alerts."
     }
 
-    fun perform(action: suspend () -> Boolean) {
+    fun perform(success: String, action: suspend () -> Boolean) {
         scope.launch {
             try {
-                reminderMessage = if (action()) "Saved." else "Saved offline. Sync will retry on sign-in."
+                reminderMessage = if (action()) success else "Saved on this device; account sync is pending."
             } catch (e: Exception) {
-                reminderMessage = e.message ?: "Could not save commitment."
+                reminderMessage = e.message ?: "Could not save reminder."
             }
         }
     }
@@ -164,13 +167,14 @@ private fun CueApp(
             topBar = {
                 TopAppBar(
                     title = { Text("cue", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.headlineMedium) },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
                     actions = {
                         Surface(
                             modifier = Modifier.padding(end = 20.dp),
                             shape = RoundedCornerShape(12.dp),
                             color = MaterialTheme.colorScheme.secondaryContainer
                         ) {
-                            Text(if (userId == null) "GUEST" else "SIGNED IN", modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            Text(if (userId == null) "On this device" else "Sync on", modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                                 style = MaterialTheme.typography.labelSmall)
                         }
                     }
@@ -197,15 +201,15 @@ private fun CueApp(
                             Uri.parse("package:${activity.packageName}")))
                     },
                     { id, title, details, due ->
-                        perform { actions.save(ownerId, id, title, details, due) }
+                        perform("Reminder saved.") { actions.save(ownerId, id, title, details, due) }
                         if (due != null && Build.VERSION.SDK_INT >= 33 &&
                             activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
                         }
                     },
-                    { id -> perform { actions.complete(ownerId, id) } },
-                    { id -> perform { actions.snooze(ownerId, id) } },
-                    { id -> perform { actions.archive(ownerId, id) } },
+                    { id -> perform("Marked done.") { actions.complete(ownerId, id) } },
+                    { id -> perform("Reminder moved 10 minutes ahead.") { actions.snooze(ownerId, id) } },
+                    { id -> perform("Reminder archived.") { actions.archive(ownerId, id) } },
                     Modifier.padding(padding)
                 )
                 Tab.AI -> EmptyScreen("Ask Cue", "Your conversations will appear here.", Icons.Default.AutoAwesome, padding)
@@ -250,12 +254,15 @@ private fun CueApp(
 private fun EmptyScreen(title: String, description: String, icon: ImageVector, padding: PaddingValues) {
     Box(Modifier.fillMaxSize().padding(padding).padding(28.dp), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(52.dp),
-                tint = MaterialTheme.colorScheme.primary)
-            Spacer(Modifier.height(12.dp))
+            Surface(shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+                Icon(icon, contentDescription = null, modifier = Modifier.padding(22.dp).size(40.dp),
+                    tint = MaterialTheme.colorScheme.primary)
+            }
+            Spacer(Modifier.height(20.dp))
             Text(title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(12.dp))
-            Text(description, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(8.dp))
+            Text(description, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium)
         }
     }
 }
@@ -274,66 +281,87 @@ private fun YouScreen(
     onSignOut: () -> Unit,
     padding: PaddingValues
 ) {
-    Column(Modifier.fillMaxSize().padding(padding).padding(24.dp)) {
+    Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(24.dp)) {
         Text("Your space", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(8.dp))
-        Text(if (signedIn) "Your synced Cue account" else "Using Cue as a guest",
+        Text("Account and appearance, just the way you like it.",
             color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(16.dp))
-        if (signedIn) {
-            Button(onClick = onSignOut, enabled = !accountBusy) { Text("Sign out") }
-        } else {
-            Button(onClick = onSignIn, enabled = !accountBusy && BuildConfig.GOOGLE_WEB_CLIENT_ID.isNotBlank()) {
-                Text("Continue with Google")
-            }
-            if (BuildConfig.GOOGLE_WEB_CLIENT_ID.isBlank()) {
-                Text("Google sign-in needs Cue's OAuth setup.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(22.dp))
+        Card(shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+            Column(Modifier.fillMaxWidth().padding(20.dp)) {
+                Text(if (signedIn) "Your reminders are synced" else "Your reminders stay on this device",
+                    style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(5.dp))
+                Text(if (signedIn) "Your Google account keeps your reminders available when you return."
+                    else "Sign in with Google to save and restore them across devices.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(16.dp))
+                if (signedIn) {
+                    Button(onClick = onSignOut, enabled = !accountBusy) { Text("Sign out") }
+                } else {
+                    Button(onClick = onSignIn, enabled = !accountBusy && BuildConfig.GOOGLE_WEB_CLIENT_ID.isNotBlank()) {
+                        Text("Continue with Google")
+                    }
+                    if (BuildConfig.GOOGLE_WEB_CLIENT_ID.isBlank()) {
+                        Text("Google sign-in needs Cue's OAuth setup.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                accountMessage?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
             }
         }
-        accountMessage?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         Spacer(Modifier.height(32.dp))
         Text("Appearance", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(8.dp))
         Text("Choose how Cue looks on this device.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(16.dp))
-        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-            ThemePreference.entries.forEachIndexed { index, value ->
-                SegmentedButton(
-                    selected = theme == value,
-                    onClick = { onTheme(value) },
-                    shape = SegmentedButtonDefaults.itemShape(index, ThemePreference.entries.size),
-                    label = { Text(value.label) }
-                )
+        Card(shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+                ThemePreference.entries.forEachIndexed { index, value ->
+                    SegmentedButton(
+                        selected = theme == value,
+                        onClick = { onTheme(value) },
+                        shape = SegmentedButtonDefaults.itemShape(index, ThemePreference.entries.size),
+                        label = { Text(value.label) }
+                    )
+                }
             }
         }
         Spacer(Modifier.height(32.dp))
         Text("Color theme", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(8.dp))
-        Text("Cue Default plus five palettes. Your choice stays on this device.",
+        Text("Pick a palette that feels like yours.",
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(16.dp))
-        LazyRow(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp)) {
-            items(ColorTheme.entries) { option ->
-                Card(
-                    modifier = Modifier.width(112.dp).height(94.dp).clickable { onColorTheme(option) },
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                    border = BorderStroke(
-                        2.dp,
-                        if (colorTheme == option) MaterialTheme.colorScheme.primary else Color.Transparent
-                    )
-                ) {
-                    Column(Modifier.padding(12.dp)) {
-                        Surface(
-                            modifier = Modifier.size(30.dp),
-                            shape = CircleShape,
-                            color = themeSwatch(option)
-                        ) {}
-                        Spacer(Modifier.height(8.dp))
-                        Text(option.label, style = MaterialTheme.typography.labelMedium)
+        ColorTheme.entries.chunked(2).forEach { row ->
+            Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
+                row.forEach { option ->
+                    Card(
+                        modifier = Modifier.weight(1f).height(104.dp).clickable { onColorTheme(option) },
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(
+                            2.dp,
+                            if (colorTheme == option) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.outlineVariant
+                        )
+                    ) {
+                        Column(Modifier.padding(15.dp)) {
+                            Surface(modifier = Modifier.size(30.dp), shape = CircleShape,
+                                color = themeSwatch(option)) {}
+                            Spacer(Modifier.height(11.dp))
+                            Text(option.label, style = MaterialTheme.typography.labelMedium,
+                                fontWeight = if (colorTheme == option) FontWeight.Bold else FontWeight.Normal)
+                        }
                     }
                 }
             }
         }
+        Spacer(Modifier.height(12.dp))
     }
 }

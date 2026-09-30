@@ -1,24 +1,15 @@
-# Milestones and acceptance gates
+# Cue: five delivery phases
 
-No milestone is called complete until its behavior is demonstrated on device or emulator and its core failure paths are checked. Screens with static sample content do not pass a feature gate.
+Cue ships in **five phases total**. A phase passes only after its real behavior and failure paths work on a device or emulator. A debug build or a static screen is not acceptance evidence. The architecture remains the product contract; these phases group work without dropping features.
 
-| Gate | Scope | Acceptance evidence |
+| Phase | Deliverable | Acceptance gate |
 |---|---|---|
-| M0 | Repository, wrapper, CI, architecture, app identity | Fresh Android Studio import; debug build and launch |
-| M1 | Theme, navigation, guest/auth, local and cloud store | Cue Default + five color themes in System/Light/Dark; Google login/logout, guest migration and retained history |
-| M2 | Commitment CRUD, local scheduling | Add/edit/complete/snooze; alert fires offline; reboot recovery |
-| M3 | Voice and natural-language capture | Tap-to-talk creates/updates via shared pipeline; ambiguity review |
-| M4 | Floating Cue | Login gate, in-app activation, overlay grant, drag/snap/edge, opacity, six actions, logout removal |
-| M5 | Notification assistant | Independent access toggle; equivalent six shared actions |
-| M6 | Deduplication, provenance, and history | Same event from multiple sources appears once with all source links; reminder and global History show creation, edits, delivery, snoozes, completion, and merges, including archived reminders and unavailable source states |
-| M7 | PDF/image/DOC/table import | Extraction preview, corrections, multi-event import, duplicate merge |
-| M8 | Share/selected text/user-approved capture | No silent cross-app capture; candidate review and source link |
-| M9 | Notification intelligence | Opt-in listener, per-app filtering, revocation, suggestion policy |
-| M10 | Email integration | OAuth, minimum scope, sync cursor/retry, consent and revoke |
-| M11 | Chains, escalation, waiting for reply | Bounded alerts; completion cancels children and follow-ups |
-| M12 | Daily planner | Fixed/movable constraints, tomorrow briefing, carry forward without copies |
-| M13 | Optional wake word | Explicit opt-in, visible platform-compliant listening, graceful unsupported state |
-| M14 | Sync/security/performance and compressed archive | Multi-device conflict tests, RLS review, offline recovery, data export/deletion; old history stored in lossless versioned batches, round-trip/count/checksum verified, searchable metadata indexed, selected ranges restored, failure recovery and user isolation tested |
-| M15 | Release QA | Device matrix, accessibility, permissions, Play policy, signed release |
+| P1 — Foundation | Repository/CI, Android identity, design system, six palettes with light/dark/system, navigation, guest Room store, Google login/logout, account-scoped Supabase sync, migration | Fresh import and debug launch; visual review on phone; accessible, finished screens and states; guest data retained on sign-in, returning account restored, sign-out isolated |
+| P2 — Reminders | Create/edit/complete/archive/snooze, offline alerts, exact/inexact fallback, reboot/timezone restore, clean Reminders and Upcoming experience | End-to-end on-device creation and alert, airplane-mode firing, no duplicate after snooze or permission change, migration preserves existing data |
+| P3 — Capture and controls | Tap-to-talk and natural-language review, import PDF/image/DOC/table, selected text/share, floating Cue and notification panel with the same six actions, permission controls | Each entry point produces reviewed reminders through the shared pipeline; overlay drag/snap/logout, panel actions, offline fallback and revocation work |
+| P4 — Intelligence and planning | Source links and deduplication, searchable reminder/global history with lossless compressed archive, notification suggestions, opt-in email integration, reminder chains, daily plan, optional wake word | One event across sources creates one reminder; sources and full history survive sync/compaction; AI uncertainty enters review; chain and plan changes preserve fixed times; unsupported wake word degrades cleanly |
+| P5 — Finish and release | Multi-device conflict recovery, RLS/security and data export/deletion, performance, accessibility, permission/Play review, device matrix and signed release | Full regression passes, compressed-history round trip/count/checksum and owner isolation pass, accessible visual QA accepted, signed release builds |
 
-Active milestone: **M2**. M1 Google login, logout/returning account, guest migration, and theme checks were accepted by the owner on device; the latest M1 Android debug CI build passed (`952369e`). M2 implements commitment CRUD and local scheduling with offline firing and reboot recovery. M1 sign-in and guest data isolation remain regression checks.
+**Current status:** P1 functional checks for login, logout, returning account, guest migration, and theme persistence were accepted on device. The first UI pass was too bare; visual acceptance is open and the design refresh is being done alongside P2. P2 implementation is on `feature/m2-commitments-alarms` in draft PR #5; device checks in [M2_DEVICE_CHECKS.md](M2_DEVICE_CHECKS.md) are still required. P3–P5 have not started. No extra milestones are planned.
+
+All user-facing screens call the core item a **reminder**. The internal canonical entity and database table remain `Commitment` / `commitments` so existing data and sync are preserved.
