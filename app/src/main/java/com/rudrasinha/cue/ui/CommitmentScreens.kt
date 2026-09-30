@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.Lightbulb
@@ -20,6 +21,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -136,21 +138,27 @@ fun CommitmentListScreen(
     MaterialTheme(colorScheme = darkColorScheme(primary = violet, background = canvasTop,
         surface = cardColor, onSurface = ivory, onSurfaceVariant = muted)) {
         Box(modifier.fillMaxSize().background(Brush.verticalGradient(
-            listOf(canvasTop, canvasMiddle, canvasTop)))) {
+            listOf(canvasTop, Color(0xFF1A1926), canvasTop)))) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp)) {
+                .padding(horizontal = 22.dp)) {
                 Spacer(Modifier.height(24.dp))
+                Text(today.format(DateTimeFormatter.ofPattern("EEEE, d MMMM")).uppercase(),
+                    color = violet, style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (upcoming) "Calendar" else "Reminder", color = ivory,
-                        style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold,
-                        modifier = Modifier.weight(1f))
-                    IconButton(onClick = { searchOpen = !searchOpen; if (!searchOpen) query = "" }) {
+                    Text(if (upcoming) "Your calendar" else "Your reminders",
+                        color = ivory, style = MaterialTheme.typography.headlineLarge,
+                        fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    IconButton(onClick = { searchOpen = !searchOpen; if (!searchOpen) query = "" },
+                        modifier = Modifier.size(44.dp).background(cardColor, CircleShape)) {
                         Icon(Icons.Outlined.Search, contentDescription = "Search reminders", tint = ivory)
                     }
+                    Spacer(Modifier.width(8.dp))
                     Box {
-                        IconButton(onClick = { menuOpen = true }) {
-                            Icon(Icons.Filled.MoreVert, contentDescription = "More options", tint = ivory,
-                                modifier = Modifier.size(28.dp))
+                        IconButton(onClick = { menuOpen = true },
+                            modifier = Modifier.size(44.dp).background(cardColor, CircleShape)) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = "More options", tint = ivory)
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                             DropdownMenuItem(text = { Text(if (signedIn) "Sync now" else "Sign in to sync") },
@@ -172,19 +180,21 @@ fun CommitmentListScreen(
                     }
                 }
                 if (searchOpen) {
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(16.dp))
                     OutlinedTextField(value = query, onValueChange = { query = it },
                         modifier = Modifier.fillMaxWidth(), singleLine = true,
-                        label = { Text("Search reminders") },
+                        placeholder = { Text("Find a reminder") },
+                        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                        shape = RoundedCornerShape(20.dp),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = ivory, unfocusedTextColor = ivory,
-                            focusedLabelColor = violet, unfocusedLabelColor = muted,
+                            focusedPlaceholderColor = muted, unfocusedPlaceholderColor = muted,
                             focusedBorderColor = violet, unfocusedBorderColor = muted))
                 }
-                Spacer(Modifier.height(22.dp))
-
+                Spacer(Modifier.height(24.dp))
                 if (upcoming) {
-                    Surface(shape = RoundedCornerShape(28.dp), color = cardColor) {
+                    Surface(shape = RoundedCornerShape(28.dp), color = cardColor,
+                        border = BorderStroke(1.dp, Color(0xFF343140))) {
                         Column(Modifier.fillMaxWidth().padding(18.dp)) {
                             CalendarGrid(visibleMonth, selectedDate,
                                 active.mapNotNull(::dateOf).groupingBy { it }.eachCount(),
@@ -197,23 +207,25 @@ fun CommitmentListScreen(
                                 }, onDate = { selectedDate = it })
                         }
                     }
-                    Spacer(Modifier.height(14.dp))
                     TextButton(onClick = { selectedDate = today; visibleMonth = YearMonth.from(today) }) {
-                        Text("Jump to today", color = violet)
+                        Text("Today", color = violet)
                     }
                 } else {
-                    ReminderView.entries.chunked(3).forEach { row ->
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            row.forEach { view ->
-                                CategoryTile(view, matching(view).size,
-                                    selected = selectedView == view,
-                                    modifier = Modifier.weight(1f)) { selectedView = view }
+                    SummaryHero(active, today, now, onAdd = { openEditor() })
+                    Spacer(Modifier.height(28.dp))
+                    Text("EXPLORE", color = muted, style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(12.dp))
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        (listOf(ReminderView.ALL) + ReminderView.entries.filter { it != ReminderView.ALL })
+                            .forEach { view ->
+                                FilterPill(view, matching(view).size, selectedView == view) {
+                                    selectedView = view
+                                }
                             }
-                        }
-                        Spacer(Modifier.height(10.dp))
                     }
                 }
-
                 if (!notificationsAllowed && active.any { it.dueAtMillis != null }) {
                     Notice("Notifications are off. Alerts won't appear.",
                         "Open settings", onNotificationAccess)
@@ -224,79 +236,73 @@ fun CommitmentListScreen(
                 }
                 message?.let { Text(it, color = violet, modifier = Modifier.padding(vertical = 10.dp),
                     style = MaterialTheme.typography.bodySmall) }
-
-                Spacer(Modifier.height(if (upcoming) 12.dp else 18.dp))
+                Spacer(Modifier.height(26.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (upcoming) selectedDate.format(dayFormat)
-                        else if (selectedView == ReminderView.ALL) "Your reminders" else selectedView.label,
-                        color = ivory, fontWeight = FontWeight.SemiBold,
-                        style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                    Text("${visibleItems.size}", color = muted, style = MaterialTheme.typography.bodyMedium)
+                    Column(Modifier.weight(1f)) {
+                        Text(if (upcoming) selectedDate.format(dayFormat)
+                            else if (selectedView == ReminderView.ALL) "Coming into focus"
+                            else selectedView.label,
+                            color = ivory, style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.SemiBold)
+                        Text(if (upcoming) "Your plan for this day"
+                            else if (isCompleted) "The things you finished"
+                            else "One thing at a time",
+                            color = muted, style = MaterialTheme.typography.bodySmall)
+                    }
+                    Surface(shape = CircleShape, color = Color(0xFF343047)) {
+                        Text("${visibleItems.size}", color = ivory,
+                            style = MaterialTheme.typography.labelMedium,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
+                    }
                 }
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(16.dp))
                 if (visibleItems.isEmpty()) {
-                    EmptyReminderState(
-                        when {
-                            query.isNotBlank() -> "No reminders match your search."
-                            upcoming -> "Nothing planned for this day."
-                            isCompleted -> "Completed reminders will appear here."
-                            selectedView != ReminderView.ALL -> "Nothing here yet."
-                            else -> "A fresh start. Add something you want to remember."
-                        })
+                    EmptyReminderState(when {
+                        query.isNotBlank() -> "No reminders match your search."
+                        upcoming -> "Nothing planned for this day."
+                        isCompleted -> "Completed reminders will appear here."
+                        selectedView != ReminderView.ALL -> "Nothing here yet."
+                        else -> "A clear day. Add something you want to remember."
+                    }, onAdd = { openEditor() })
                 } else {
                     val sections = if (!upcoming && selectedView == ReminderView.ALL) listOf(
-                        "Past" to visibleItems.filter { (it.dueAtMillis ?: Long.MAX_VALUE) < now },
-                        "Today" to visibleItems.filter { dateOf(it) == today &&
+                        "PAST" to visibleItems.filter { (it.dueAtMillis ?: Long.MAX_VALUE) < now },
+                        "TODAY" to visibleItems.filter { dateOf(it) == today &&
                             (it.dueAtMillis ?: 0L) >= now },
-                        "Coming up" to visibleItems.filter { dateOf(it)?.isAfter(today) == true },
-                        "No alert" to visibleItems.filter { it.dueAtMillis == null }
+                        "COMING UP" to visibleItems.filter { dateOf(it)?.isAfter(today) == true },
+                        "NO ALERT" to visibleItems.filter { it.dueAtMillis == null }
                     ) else listOf("" to visibleItems)
-                    sections.forEach { (heading, items) ->
-                        if (items.isNotEmpty()) {
+                    sections.forEach { (heading, sectionItems) ->
+                        if (sectionItems.isNotEmpty()) {
                             if (heading.isNotEmpty()) {
-                                Text(heading, color = muted, style = MaterialTheme.typography.bodyMedium,
-                                    modifier = Modifier.padding(top = 8.dp, bottom = 10.dp))
+                                Text(heading, color = muted, style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(top = 13.dp, bottom = 11.dp))
                             }
-                            items.forEach { item ->
+                            sectionItems.forEach { item ->
                                 key(item.id) {
-                                    ReminderCard(item, now, isCompleted, onEdit = { openEditor(item) },
-                                        onComplete = { onComplete(item.id) }, onSnooze = { onSnooze(item.id) },
+                                    ReminderCard(item, now, isCompleted,
+                                        onEdit = { openEditor(item) },
+                                        onComplete = { onComplete(item.id) },
+                                        onSnooze = { onSnooze(item.id) },
                                         onArchive = { onArchive(item.id) })
-                                    Spacer(Modifier.height(12.dp))
+                                    Spacer(Modifier.height(10.dp))
                                 }
                             }
                         }
                     }
                 }
-
-                if (!upcoming && active.isEmpty() && query.isBlank() && selectedView == ReminderView.ALL) {
-                    Spacer(Modifier.height(24.dp))
-                    Text("Try these out", color = muted, style = MaterialTheme.typography.titleMedium)
-                    Spacer(Modifier.height(12.dp))
-                    listOf("Call home", "Pick up groceries", "Plan my week").forEach { idea ->
-                        Surface(onClick = { openEditor(suggestedTitle = idea) },
-                            shape = RoundedCornerShape(22.dp), color = cardColor,
-                            modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
-                            Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Outlined.Lightbulb, contentDescription = null, tint = amber)
-                                Spacer(Modifier.width(16.dp))
-                                Text(idea, color = ivory, modifier = Modifier.weight(1f))
-                                Icon(Icons.Filled.Add, contentDescription = null, tint = muted)
-                            }
-                        }
-                    }
-                }
-                Spacer(Modifier.height(104.dp))
+                Spacer(Modifier.height(108.dp))
             }
             Button(onClick = { openEditor() },
-                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp),
-                shape = RoundedCornerShape(50.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF373142), contentColor = ivory),
-                border = BorderStroke(1.dp, Color(0xFF5B526A)),
-                contentPadding = PaddingValues(horizontal = 26.dp, vertical = 16.dp)) {
-                Text("Add reminder", fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.width(30.dp))
+                modifier = Modifier.align(Alignment.BottomEnd)
+                    .padding(end = 22.dp, bottom = 20.dp).height(58.dp),
+                shape = RoundedCornerShape(21.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = violet, contentColor = canvasTop),
+                contentPadding = PaddingValues(horizontal = 22.dp)) {
                 Icon(Icons.Filled.Add, contentDescription = null)
+                Spacer(Modifier.width(10.dp))
+                Text("Add reminder", fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -311,32 +317,84 @@ fun CommitmentListScreen(
 }
 
 @Composable
-private fun CategoryTile(view: ReminderView, count: Int, selected: Boolean,
-    modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Column(modifier.height(112.dp).border(1.dp,
-        if (selected) view.tint.copy(alpha = .75f) else Color.Transparent,
-        RoundedCornerShape(26.dp)).background(cardColor, RoundedCornerShape(26.dp))
-        .clickable(onClick = onClick).padding(14.dp),
-        verticalArrangement = Arrangement.SpaceBetween) {
-        Icon(view.icon, contentDescription = null, tint = view.tint, modifier = Modifier.size(27.dp))
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text(view.label, color = if (selected) ivory else muted,
-                style = MaterialTheme.typography.labelMedium,
-                maxLines = 1, overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f))
-            Text("$count", color = ivory, style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold)
+private fun SummaryHero(active: List<CommitmentEntity>, today: LocalDate, now: Long,
+    onAdd: () -> Unit) {
+    val todayCount = active.count { item ->
+        item.dueAtMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate() } == today
+    }
+    val next = active.filter { (it.dueAtMillis ?: 0L) > now }
+        .minByOrNull { it.dueAtMillis ?: Long.MAX_VALUE }
+    Box(Modifier.fillMaxWidth().height(184.dp).clip(RoundedCornerShape(30.dp))
+        .background(Brush.linearGradient(listOf(Color(0xFF493D77), Color(0xFF25243D))))
+        .border(1.dp, Color(0xFF7468A1), RoundedCornerShape(30.dp))) {
+        Box(Modifier.align(Alignment.TopEnd).offset(x = 56.dp, y = (-76).dp)
+            .size(220.dp).background(ivory.copy(alpha = .055f), CircleShape))
+        Box(Modifier.align(Alignment.BottomEnd).offset(x = 30.dp, y = 87.dp)
+            .size(166.dp).background(ivory.copy(alpha = .045f), CircleShape))
+        Column(Modifier.fillMaxSize().padding(23.dp), verticalArrangement = Arrangement.SpaceBetween) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = Color(0xFFE2D7FF),
+                    modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("TODAY'S FOCUS", color = Color(0xFFE2D7FF),
+                    style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+            }
+            Row(verticalAlignment = Alignment.Bottom) {
+                Column(Modifier.weight(1f)) {
+                    Text("${todayCount}", color = ivory,
+                        style = MaterialTheme.typography.displayMedium, fontWeight = FontWeight.Bold)
+                    Text(if (todayCount == 1) "reminder for today" else "reminders for today",
+                        color = Color(0xFFE1DDEE), style = MaterialTheme.typography.bodyMedium)
+                }
+                IconButton(onClick = onAdd,
+                    modifier = Modifier.size(48.dp).background(ivory, CircleShape)) {
+                    Icon(Icons.Filled.Add, contentDescription = "Add reminder", tint = Color(0xFF302A49))
+                }
+            }
+            Text(next?.let { "NEXT  ·  ${it.title.take(35)}" } ?: "THE DAY IS YOURS",
+                color = Color(0xFFE2D7FF), style = MaterialTheme.typography.labelSmall,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
 
 @Composable
-private fun EmptyReminderState(text: String) {
-    Surface(shape = RoundedCornerShape(24.dp), color = cardColor) {
-        Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Outlined.Lightbulb, contentDescription = null, tint = violet)
-            Spacer(Modifier.width(14.dp))
-            Text(text, color = muted, style = MaterialTheme.typography.bodyMedium)
+private fun FilterPill(view: ReminderView, count: Int, selected: Boolean, onClick: () -> Unit) {
+    Surface(onClick = onClick, shape = RoundedCornerShape(18.dp),
+        color = if (selected) violet else cardColor,
+        border = BorderStroke(1.dp, if (selected) violet else Color(0xFF373541))) {
+        Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Icon(view.icon, contentDescription = null,
+                tint = if (selected) canvasTop else view.tint, modifier = Modifier.size(17.dp))
+            Spacer(Modifier.width(7.dp))
+            Text(view.label, color = if (selected) canvasTop else ivory,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium)
+            Spacer(Modifier.width(8.dp))
+            Text(count.toString(), color = if (selected) canvasTop else muted,
+                style = MaterialTheme.typography.labelSmall)
+        }
+    }
+}
+
+@Composable
+private fun EmptyReminderState(text: String, onAdd: () -> Unit) {
+    Surface(shape = RoundedCornerShape(28.dp), color = cardColor,
+        border = BorderStroke(1.dp, Color(0xFF35333F))) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally) {
+            Surface(shape = CircleShape, color = Color(0xFF363047)) {
+                Icon(Icons.Outlined.Lightbulb, contentDescription = null, tint = violet,
+                    modifier = Modifier.padding(16.dp).size(30.dp))
+            }
+            Spacer(Modifier.height(17.dp))
+            Text("Space for what matters", color = ivory,
+                style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(6.dp))
+            Text(text, color = muted, style = MaterialTheme.typography.bodySmall)
+            Spacer(Modifier.height(15.dp))
+            TextButton(onClick = onAdd) { Text("Create a reminder", color = violet) }
         }
     }
 }
@@ -356,39 +414,51 @@ private fun Notice(text: String, actionLabel: String, onAction: () -> Unit) {
 private fun ReminderCard(item: CommitmentEntity, now: Long, completed: Boolean,
     onEdit: () -> Unit, onComplete: () -> Unit, onSnooze: () -> Unit, onArchive: () -> Unit) {
     var menuOpen by remember { mutableStateOf(false) }
-    Surface(shape = RoundedCornerShape(24.dp), color = cardColor) {
-        Row(Modifier.fillMaxWidth().padding(start = 15.dp, end = 8.dp, top = 16.dp, bottom = 16.dp),
-            verticalAlignment = Alignment.Top) {
-            IconButton(onClick = onComplete, enabled = !completed, modifier = Modifier.size(38.dp)) {
+    val accent = when {
+        completed -> aqua
+        item.dueAtMillis == null -> violet
+        item.dueAtMillis < now -> coral
+        else -> sky
+    }
+    val label = when {
+        completed -> "Completed"
+        item.dueAtMillis == null -> "Anytime"
+        item.dueAtMillis < now -> "Past · ${formatTime(item.dueAtMillis)}"
+        else -> formatTime(item.dueAtMillis)
+    }
+    Surface(shape = RoundedCornerShape(24.dp), color = cardColor,
+        border = BorderStroke(1.dp, Color(0xFF36333F))) {
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 16.dp, bottom = 16.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.width(4.dp).height(54.dp)
+                .background(accent, RoundedCornerShape(8.dp)))
+            Spacer(Modifier.width(13.dp))
+            IconButton(onClick = onComplete, enabled = !completed, modifier = Modifier.size(36.dp)) {
                 Icon(if (completed) Icons.Filled.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
                     contentDescription = if (completed) "Completed" else "Mark ${item.title} done",
-                    tint = if (completed) aqua else muted,
-                    modifier = Modifier.size(26.dp))
+                    tint = if (completed) aqua else muted, modifier = Modifier.size(26.dp))
             }
-            Column(Modifier.weight(1f).padding(start = 8.dp, top = 2.dp)
+            Column(Modifier.weight(1f).padding(start = 8.dp)
                 .clickable(enabled = !completed, onClick = onEdit)) {
                 Text(item.title, color = ivory, style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Medium)
+                    fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 item.details?.takeIf { it.isNotBlank() }?.let {
-                    Spacer(Modifier.height(5.dp))
+                    Spacer(Modifier.height(4.dp))
                     Text(it, color = muted, style = MaterialTheme.typography.bodySmall,
-                        maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                Spacer(Modifier.height(8.dp))
-                Text(when {
-                    completed -> "Done"
-                    item.dueAtMillis == null -> "No alert"
-                    item.dueAtMillis < now -> "Past · ${formatTime(item.dueAtMillis)}"
-                    else -> formatTime(item.dueAtMillis)
-                }, color = when {
-                    completed -> aqua
-                    item.dueAtMillis == null -> violet
-                    item.dueAtMillis < now -> coral
-                    else -> amber
-                }, style = MaterialTheme.typography.bodySmall)
+                Spacer(Modifier.height(9.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(if (item.dueAtMillis == null) Icons.Filled.NotificationsOff
+                        else Icons.Filled.Schedule, contentDescription = null,
+                        tint = accent, modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(label, color = accent, style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             }
             if (!completed) Box {
-                IconButton(onClick = { menuOpen = true }) {
+                IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(40.dp)) {
                     Icon(Icons.Filled.MoreVert, contentDescription = "Actions for ${item.title}",
                         tint = muted)
                 }
@@ -489,25 +559,29 @@ private fun ReminderEditor(item: CommitmentEntity?, suggestedTitle: String, sugg
         .atZone(ZoneId.systemDefault()).toInstant().toEpochMilli() else null
     val valid = title.isNotBlank() && (due == null || due > System.currentTimeMillis())
 
-    MaterialTheme(colorScheme = darkColorScheme(primary = violet, surface = Color(0xFF24212D),
+    MaterialTheme(colorScheme = darkColorScheme(primary = violet, surface = Color(0xFF20212A),
         onSurface = ivory, onSurfaceVariant = muted, outline = muted)) {
         ModalBottomSheet(onDismissRequest = onDismiss,
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-            containerColor = Color(0xFF24212D), contentColor = ivory,
+            containerColor = Color(0xFF20212A), contentColor = ivory,
             dragHandle = { Surface(shape = CircleShape, color = Color(0xFF6A6078),
                 modifier = Modifier.padding(top = 12.dp).size(width = 38.dp, height = 4.dp)) {} }) {
             LaunchedEffect(Unit) { titleFocus.requestFocus(); keyboard?.show() }
             Column(Modifier.fillMaxWidth().imePadding().verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp).padding(bottom = 18.dp)) {
-                Spacer(Modifier.height(22.dp))
+                Spacer(Modifier.height(10.dp))
+                Text(if (item == null) "NEW REMINDER" else "EDIT REMINDER",
+                    color = violet, style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(18.dp))
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     BasicTextField(value = title, onValueChange = { title = it },
                         modifier = Modifier.weight(1f).focusRequester(titleFocus),
-                        singleLine = true, cursorBrush = SolidColor(sky),
+                        singleLine = true, cursorBrush = SolidColor(violet),
                         textStyle = MaterialTheme.typography.titleLarge.copy(color = ivory),
                         decorationBox = { inner ->
                             Box {
-                                if (title.isEmpty()) Text("Add reminder", color = muted,
+                                if (title.isEmpty()) Text("What do you want to remember?", color = muted,
                                     style = MaterialTheme.typography.titleLarge)
                                 inner()
                             }
@@ -516,7 +590,7 @@ private fun ReminderEditor(item: CommitmentEntity?, suggestedTitle: String, sugg
                     IconButton(onClick = { onSave(title.trim(), details.trim().ifBlank { null }, due) },
                         enabled = valid,
                         modifier = Modifier.size(52.dp).background(
-                            if (valid) sky else Color(0xFF465062), CircleShape)) {
+                            if (valid) violet else Color(0xFF465062), CircleShape)) {
                         Icon(Icons.Filled.Check, contentDescription = "Save reminder",
                             tint = if (valid) canvasTop else muted, modifier = Modifier.size(28.dp))
                     }
@@ -530,10 +604,25 @@ private fun ReminderEditor(item: CommitmentEntity?, suggestedTitle: String, sugg
                 }
                 if (alertEnabled) {
                     Spacer(Modifier.height(12.dp))
-                    Text("Alert · ${chosenDate.format(DateTimeFormatter.ofPattern("d MMM"))} · " +
-                        LocalTime.of(timeState.hour, timeState.minute)
-                            .format(DateTimeFormatter.ofPattern("h:mm a")),
-                        color = sky, style = MaterialTheme.typography.bodySmall)
+                    Surface(onClick = {
+                        showCalendar = !showCalendar; showTime = false
+                        focusManager.clearFocus(); keyboard?.hide()
+                    }, shape = RoundedCornerShape(16.dp), color = Color(0xFF353145),
+                        modifier = Modifier.fillMaxWidth()) {
+                        Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Filled.NotificationsActive, contentDescription = null,
+                                tint = violet, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(10.dp))
+                            Text(chosenDate.format(DateTimeFormatter.ofPattern("EEE, d MMM")) + " · " +
+                                LocalTime.of(timeState.hour, timeState.minute)
+                                    .format(DateTimeFormatter.ofPattern("h:mm a")),
+                                color = ivory, style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(1f))
+                            Icon(Icons.Filled.ChevronRight, contentDescription = "Change alert",
+                                tint = muted, modifier = Modifier.size(18.dp))
+                        }
+                    }
                     if (showCalendar) {
                         Spacer(Modifier.height(14.dp))
                         CalendarGrid(month, chosenDate, emptyMap(),
@@ -583,12 +672,26 @@ private fun ReminderEditor(item: CommitmentEntity?, suggestedTitle: String, sugg
 @Composable
 private fun QuickAction(icon: ImageVector, description: String, selected: Boolean,
     onClick: () -> Unit) {
-    Surface(onClick = onClick, modifier = Modifier.size(50.dp), shape = CircleShape,
-        color = Color(0xFF0B0B0E),
-        border = if (selected) BorderStroke(1.dp, violet) else null) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(icon, contentDescription = description, tint = ivory, modifier = Modifier.size(24.dp))
+    val label = when (description) {
+        "Add note" -> "Note"
+        "Choose date" -> "Date"
+        "Choose time" -> "Time"
+        "Toggle alert" -> "Alert"
+        else -> "List"
+    }
+    Column(horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.width(59.dp).clickable(onClick = onClick)) {
+        Surface(shape = RoundedCornerShape(16.dp), color =
+            if (selected) Color(0xFF49405F) else Color(0xFF30303A),
+            border = if (selected) BorderStroke(1.dp, violet) else null) {
+            Box(Modifier.size(50.dp), contentAlignment = Alignment.Center) {
+                Icon(icon, contentDescription = description,
+                    tint = if (selected) violet else ivory, modifier = Modifier.size(22.dp))
+            }
         }
+        Spacer(Modifier.height(5.dp))
+        Text(label, color = if (selected) violet else muted,
+            style = MaterialTheme.typography.labelSmall)
     }
 }
 
