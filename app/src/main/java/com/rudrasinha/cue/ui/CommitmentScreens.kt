@@ -12,6 +12,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.Lightbulb
+import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -226,7 +227,7 @@ fun CommitmentListScreen(
 
                 if (!upcoming && active.isEmpty() && query.isBlank() && selectedView == ReminderView.ALL) {
                     Spacer(Modifier.height(24.dp))
-                    Text("A few ideas", color = muted, style = MaterialTheme.typography.titleMedium)
+                    Text("Try these out", color = muted, style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.height(12.dp))
                     listOf("Call home", "Pick up groceries", "Plan my week").forEach { idea ->
                         Surface(onClick = { openEditor(suggestedTitle = idea) },
@@ -314,11 +315,10 @@ private fun ReminderCard(item: CommitmentEntity, now: Long, completed: Boolean,
         Row(Modifier.fillMaxWidth().padding(start = 15.dp, end = 8.dp, top = 16.dp, bottom = 16.dp),
             verticalAlignment = Alignment.Top) {
             IconButton(onClick = onComplete, enabled = !completed, modifier = Modifier.size(38.dp)) {
-                Icon(if (completed) Icons.Filled.CheckCircle else Icons.Filled.Check,
+                Icon(if (completed) Icons.Filled.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
                     contentDescription = if (completed) "Completed" else "Mark ${item.title} done",
                     tint = if (completed) aqua else muted,
-                    modifier = Modifier.size(25.dp).border(1.5.dp,
-                        if (completed) Color.Transparent else muted, CircleShape).padding(3.dp))
+                    modifier = Modifier.size(26.dp))
             }
             Column(Modifier.weight(1f).padding(start = 8.dp, top = 2.dp)
                 .clickable(enabled = !completed, onClick = onEdit)) {
