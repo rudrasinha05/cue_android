@@ -37,7 +37,8 @@ private val timeFormat = DateTimeFormatter.ofPattern("EEE, d MMM · h:mm a")
 @Composable
 fun CommitmentListScreen(
     active: List<CommitmentEntity>, completed: List<CommitmentEntity>, upcoming: Boolean,
-    message: String?, exactAvailable: Boolean, notificationsAllowed: Boolean, onExactAccess: () -> Unit,
+    message: String?, exactAvailable: Boolean, notificationsAllowed: Boolean,
+    onExactAccess: () -> Unit, onNotificationAccess: () -> Unit,
     onSave: (String?, String, String?, Long?) -> Unit,
     onComplete: (String) -> Unit, onSnooze: (String) -> Unit, onArchive: (String) -> Unit,
     modifier: Modifier = Modifier
@@ -95,7 +96,9 @@ fun CommitmentListScreen(
         }
         if (!notificationsAllowed && active.any { it.dueAtMillis != null }) {
             Spacer(Modifier.height(14.dp))
-            Notice("Notifications are off. Enable them in Android settings to receive alerts.")
+            Notice("Notifications are off. Turn them on to receive alerts.") {
+                TextButton(onClick = onNotificationAccess) { Text("Open notification settings") }
+            }
         }
         if (!exactAvailable && active.any { it.dueAtMillis != null }) {
             Spacer(Modifier.height(12.dp))

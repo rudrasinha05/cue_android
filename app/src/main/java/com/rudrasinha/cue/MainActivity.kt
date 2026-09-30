@@ -1,6 +1,7 @@
 package com.rudrasinha.cue
 
 import android.app.Activity
+import android.app.NotificationManager
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -55,6 +56,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -82,13 +84,20 @@ import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.status.SessionStatus
 
 class MainActivity : ComponentActivity() {
+    private var permissionEpoch by mutableIntStateOf(0)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val themeStore = ThemeStore(applicationContext)
         val database = CueDatabase.get(applicationContext)
         val auth = CueAuth(applicationContext)
         val cloud = CloudCommitments(database, auth.client)
-        setContent { CueApp(themeStore, database.commitments(), auth, cloud, this) }
+        setContent { CueApp(themeStore, database.commitments(), auth, cloud, this, permissionEpoch) }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        permissionEpoch++
     }
 }
 
@@ -107,7 +116,8 @@ private fun CueApp(
     commitments: CommitmentDao,
     auth: CueAuth,
     cloud: CloudCommitments,
-    activity: Activity
+    activity: Activity,
+    permissionEpoch: Int
 ) {
     val theme by themeStore.mode.collectAsState(initial = ThemePreference.SYSTEM)
     val colorTheme by themeStore.colorTheme.collectAsState(initial = ColorTheme.DEFAULT)
@@ -123,12 +133,18 @@ private fun CueApp(
     var accountMessage by remember { mutableStateOf<String?>(null) }
     var accountBusy by remember { mutableStateOf(false) }
     var reminderMessage by remember { mutableStateOf<String?>(null) }
-    var notificationAllowed by remember {
-        mutableStateOf(Build.VERSION.SDK_INT < 33 ||
-            activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED)
+    fun notificationsEnabled(): Boolean {
+        val manager = activity.getSystemService(NotificationManager::class.java)
+        val granted = Build.VERSION.SDK_INT < 33 ||
+            activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        val channel = manager.getNotificationChannel("cue_reminders")
+        return granted && manager.areNotificationsEnabled() &&
+            channel?.importance != NotificationManager.IMPORTANCE_NONE
     }
+    var notificationAllowed by remember { mutableStateOf(notificationsEnabled()) }
+    LaunchedEffect(permissionEpoch) { notificationAllowed = notificationsEnabled() }
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        notificationAllowed = granted
+        notificationAllowed = granted && notificationsEnabled()
         if (!granted) reminderMessage = "Allow notifications in Android settings to see alerts."
     }
 
@@ -196,6 +212,11 @@ private fun CueApp(
                     scheduler.exactAvailable(), notificationAllowed, {
                         activity.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
                             Uri.parse("package:${activity.packageName}")))
+                    },
+                    {
+                        activity.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                            putExtra(Settings.EXTRA_APP_PACKAGE, activity.packageName)
+                        })
                     },
                     { id, title, details, due ->
                         perform("Reminder saved.") { actions.save(ownerId, id, title, details, due) }

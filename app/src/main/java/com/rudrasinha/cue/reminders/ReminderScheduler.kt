@@ -13,6 +13,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import com.rudrasinha.cue.MainActivity
+import com.rudrasinha.cue.R
 import com.rudrasinha.cue.data.CommitmentEntity
 import com.rudrasinha.cue.data.CueDatabase
 import kotlinx.coroutines.CoroutineScope
@@ -125,9 +126,9 @@ class ReminderReceiver : BroadcastReceiver() {
         val open = PendingIntent.getActivity(context, item.id.hashCode(),
             Intent(context, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val notice = Notification.Builder(context, "cue_reminders")
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle("Cue reminder")
-            .setContentText(item.title)
+            .setSmallIcon(R.drawable.ic_cue_foreground)
+            .setContentTitle(item.title)
+            .setContentText(item.details?.takeIf { it.isNotBlank() } ?: "It's time for your reminder.")
             .setContentIntent(open)
             .setAutoCancel(true)
             .build()
