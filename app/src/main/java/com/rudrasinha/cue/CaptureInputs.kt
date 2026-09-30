@@ -29,7 +29,8 @@ internal fun sharedText(intent: Intent?): CaptureDraft? {
     }?.trim()?.take(4000)?.takeIf { it.isNotBlank() } ?: return null
     val type = if (intent?.action == Intent.ACTION_PROCESS_TEXT) "selection" else "share"
     return CaptureDraft(UUID.randomUUID().toString(), text,
-        CaptureOrigin(type, if (type == "selection") "Selected text" else "Shared text", text))
+        CaptureOrigin(type, if (type == "selection") "Selected text" else "Shared text", text),
+        suggestedDue(text))
 }
 
 internal fun importedText(context: Context, uri: Uri): CaptureDraft {

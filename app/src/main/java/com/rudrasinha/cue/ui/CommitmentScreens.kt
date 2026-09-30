@@ -63,7 +63,8 @@ private enum class ReminderView(val label: String, val icon: ImageVector, val ti
     ALL("All", Icons.Filled.ViewAgenda, aqua)
 }
 
-data class CaptureDraft(val id: String, val text: String, val origin: CaptureOrigin)
+data class CaptureDraft(val id: String, val text: String, val origin: CaptureOrigin,
+    val suggestedDueAtMillis: Long? = null)
 
 @Composable
 fun CommitmentListScreen(
@@ -86,6 +87,7 @@ fun CommitmentListScreen(
     var editing by remember { mutableStateOf<CommitmentEntity?>(null) }
     var draftTitle by remember { mutableStateOf("") }
     var draftDetails by remember { mutableStateOf("") }
+    var draftDue by remember { mutableStateOf<Long?>(null) }
     var draftOrigin by remember { mutableStateOf(CaptureOrigin("manual")) }
     var draftId by remember { mutableStateOf("") }
     var editorOpen by remember { mutableStateOf(false) }
@@ -98,6 +100,7 @@ fun CommitmentListScreen(
         editing = item
         draftTitle = suggestedTitle
         draftDetails = ""
+        draftDue = null
         draftOrigin = CaptureOrigin("manual")
         draftId = java.util.UUID.randomUUID().toString()
         editorOpen = true
@@ -107,6 +110,7 @@ fun CommitmentListScreen(
             editing = null
             draftTitle = externalDraft.text.lineSequence().firstOrNull().orEmpty().take(100)
             draftDetails = externalDraft.text.take(2000).takeIf { it != draftTitle }.orEmpty()
+            draftDue = externalDraft.suggestedDueAtMillis
             draftOrigin = externalDraft.origin
             draftId = externalDraft.id
             editorOpen = true
@@ -297,13 +301,13 @@ fun CommitmentListScreen(
         }
     }
 
-    if (editorOpen) ReminderEditor(editing, draftTitle, draftDetails, draftId,
+    if (editorOpen) key(draftId) { ReminderEditor(editing, draftTitle, draftDetails, draftDue, draftId,
         if (upcoming) selectedDate else today,
         onDismiss = { editorOpen = false; if (externalDraft != null) onCaptureDismiss() }) { title, details, due ->
         onSave(editing?.id, title, details, due, draftOrigin)
         editorOpen = false
         if (externalDraft != null) onCaptureDismiss()
-    }
+    } }
 }
 
 @Composable
@@ -459,9 +463,12 @@ private fun CalendarGrid(month: YearMonth, selectedDate: LocalDate,
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ReminderEditor(item: CommitmentEntity?, suggestedTitle: String, suggestedDetails: String,
+    suggestedDue: Long?,
     draftId: String, initialDate: LocalDate,
     onDismiss: () -> Unit, onSave: (String, String?, Long?) -> Unit) {
-    val initialDue = item?.dueAtMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()) }
+    val initialDue = (item?.dueAtMillis ?: suggestedDue)?.let {
+        Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault())
+    }
     val suggestedStart = remember { LocalDateTime.now().plusMinutes(10) }
     val startDate = maxOf(initialDate, suggestedStart.toLocalDate())
     var title by remember(item?.id, draftId) { mutableStateOf(item?.title ?: suggestedTitle) }

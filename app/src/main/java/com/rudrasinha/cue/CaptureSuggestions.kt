@@ -1,0 +1,31 @@
+package com.rudrasinha.cue
+
+import java.time.Clock
+import java.time.LocalDate
+import java.util.Locale
+
+/** Only clear English date/time phrases are suggested; the user confirms in the editor. */
+internal fun suggestedDue(text: String, clock: Clock = Clock.systemDefaultZone()): Long? {
+    val normalized = text.lowercase(Locale.ROOT)
+    val day = when {
+        Regex("\\btomorrow\\b").containsMatchIn(normalized) -> LocalDate.now(clock).plusDays(1)
+        Regex("\\btoday\\b").containsMatchIn(normalized) -> LocalDate.now(clock)
+        else -> return null
+    }
+    val twelveHour = Regex("\\b(1[0-2]|0?[1-9])(?::([0-5]\\d))?\\s*(am|pm)\\b")
+        .find(normalized)
+    val hour: Int
+    val minute: Int
+    if (twelveHour != null) {
+        hour = twelveHour.groupValues[1].toInt() % 12 +
+            if (twelveHour.groupValues[3] == "pm") 12 else 0
+        minute = twelveHour.groupValues[2].toIntOrNull() ?: 0
+    } else {
+        val military = Regex("\\b([01]?\\d|2[0-3]):([0-5]\\d)\\b").find(normalized)
+            ?: return null
+        hour = military.groupValues[1].toInt()
+        minute = military.groupValues[2].toInt()
+    }
+    return day.atTime(hour, minute).atZone(clock.zone).toInstant().toEpochMilli()
+        .takeIf { it > clock.millis() }
+}

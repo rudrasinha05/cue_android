@@ -165,7 +165,7 @@ private fun CueApp(
             ?.firstOrNull()?.trim()
         if (!spoken.isNullOrBlank()) activity.let {
             (it as MainActivity).queueCapture(CaptureDraft(UUID.randomUUID().toString(), spoken,
-                CaptureOrigin("voice", "Voice note", spoken)))
+                CaptureOrigin("voice", "Voice note", spoken), suggestedDue(spoken)))
         } else if (result.resultCode == Activity.RESULT_OK) reminderMessage = "No speech was captured. Try again."
     }
     val documentLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
