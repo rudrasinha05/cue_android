@@ -67,10 +67,13 @@ fun CaptureHub(onVoice: () -> Unit, onDocument: () -> Unit, onQuick: () -> Unit,
             "Write it down and add a date if you need one.", onQuick)
         Spacer(Modifier.height(12.dp))
         CaptureOption(Icons.Filled.Description, "Import a document",
-            "Pick text, CSV, TSV, Markdown or DOCX to review.", onDocument)
+            "Read text, tables, DOCX, PDF or an image and review it.", onDocument)
         Spacer(Modifier.height(24.dp))
         Text("You can also share text from another app or select text and tap Cue.",
             color = subdued, style = MaterialTheme.typography.bodyMedium)
+        Text("Long documents show their first 4,000 characters for review.",
+            color = subdued, style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(top = 9.dp))
         Spacer(Modifier.height(40.dp))
     }
 }
@@ -96,9 +99,11 @@ private fun CaptureOption(icon: ImageVector, title: String, subtitle: String, on
 @Composable
 fun HistoryScreen(events: List<ReminderEventEntity>, sources: List<SourceEntity>,
     batches: List<HistoryBatchEntity>,
+    onOpenSource: (String) -> Boolean,
     modifier: Modifier = Modifier) {
     var query by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf<ReminderEventEntity?>(null) }
+    var sourceError by remember { mutableStateOf(false) }
     val sourceByReminder = remember(sources) { sources.groupBy { it.commitmentId } }
     val archived = remember(batches) { batches.map { runCatching { HistoryArchive.read(it) } } }
     val allEvents = (events + archived.flatMap { it.getOrDefault(emptyList()) })
@@ -136,7 +141,7 @@ fun HistoryScreen(events: List<ReminderEventEntity>, sources: List<SourceEntity>
             val source = sourceByReminder[event.commitmentId]?.firstOrNull()
             Surface(shape = RoundedCornerShape(22.dp), color = panel,
                 modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
-                    .clickable { selected = event }) {
+                    .clickable { selected = event; sourceError = false }) {
                 Row(Modifier.padding(17.dp), verticalAlignment = Alignment.Top) {
                     Icon(if (event.eventType == "created") Icons.Filled.AddCircle
                         else Icons.Filled.History, contentDescription = null, tint = purple,
@@ -178,6 +183,13 @@ fun HistoryScreen(events: List<ReminderEventEntity>, sources: List<SourceEntity>
                         it.excerpt?.takeIf(String::isNotBlank)?.let { excerpt ->
                             Text(excerpt.take(500), modifier = Modifier.padding(top = 8.dp))
                         }
+                        it.originalUri?.takeIf { uri -> uri.startsWith("content://") }?.let { uri ->
+                            TextButton(onClick = { sourceError = !onOpenSource(uri) }) {
+                                Text("Open original on this device")
+                            }
+                        }
+                        if (sourceError) Text("Original isn't available here. The saved excerpt is above.",
+                            color = Color(0xFFFFC76B))
                     }
                 }
             }, confirmButton = { TextButton(onClick = { selected = null }) { Text("Close") } })

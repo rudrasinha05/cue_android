@@ -171,9 +171,11 @@ private fun CueApp(
     val documentLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) scope.launch {
             try {
+                reminderMessage = "Reading your document…"
                 runCatching { activity.contentResolver.takePersistableUriPermission(uri,
                     Intent.FLAG_GRANT_READ_URI_PERMISSION) }
                 val draft = withContext(Dispatchers.IO) { importedText(activity, uri) }
+                reminderMessage = null
                 (activity as MainActivity).queueCapture(draft)
             } catch (e: Exception) {
                 reminderMessage = e.message ?: "Could not read that document."
@@ -306,12 +308,21 @@ private fun CueApp(
                     }
                 }, onDocument = {
                     documentLauncher.launch(arrayOf("text/plain", "text/csv", "text/tab-separated-values",
-                        "text/markdown", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"))
+                        "text/markdown", "application/pdf", "image/jpeg", "image/png", "image/webp",
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"))
                 }, onQuick = {
                     (activity as MainActivity).queueCapture(CaptureDraft(UUID.randomUUID().toString(), "",
                         CaptureOrigin("manual")))
                 }, message = reminderMessage, modifier = Modifier.padding(padding))
-                Tab.INBOX -> HistoryScreen(history, sources, batches, Modifier.padding(padding))
+                Tab.INBOX -> HistoryScreen(history, sources, batches, onOpenSource = { value ->
+                    runCatching {
+                        val uri = Uri.parse(value)
+                        activity.startActivity(Intent(Intent.ACTION_VIEW).apply {
+                            setDataAndType(uri, activity.contentResolver.getType(uri) ?: "*/*")
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        })
+                    }.isSuccess
+                }, modifier = Modifier.padding(padding))
                 Tab.YOU -> YouScreen(
                     theme, colorTheme,
                     { scope.launch { themeStore.set(it) } },

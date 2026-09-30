@@ -16,10 +16,13 @@ import com.rudrasinha.cue.MainActivity
 import com.rudrasinha.cue.R
 import com.rudrasinha.cue.data.CommitmentEntity
 import com.rudrasinha.cue.data.CueDatabase
+import com.rudrasinha.cue.data.ReminderEventEntity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import java.util.UUID
+import org.json.JSONObject
 
 class ReminderScheduler(private val context: Context) {
     companion object {
@@ -103,10 +106,24 @@ class ReminderReceiver : BroadcastReceiver() {
                     val item = CueDatabase.get(context).commitments().byId(id) ?: return@launch
                     if (item.status != "active" || item.dueAtMillis != intent.getLongExtra("due", -1L)) return@launch
                     if (item.ownerId != "guest" && item.ownerId != scheduler.activeOwnerId()) return@launch
+                    var delivered = false
                     synchronized(deliveryLock) {
                         if (!scheduler.wasDelivered(item) && showNotification(context, item)) {
                             scheduler.markDelivered(item)
+                            delivered = true
                         }
+                    }
+                    if (delivered) {
+                        val key = "alerted:${item.id}:${item.dueAtMillis}"
+                        CueDatabase.get(context).history().insertEvent(ReminderEventEntity(
+                            id = UUID.nameUUIDFromBytes(key.toByteArray(Charsets.UTF_8)).toString(),
+                            ownerId = item.ownerId, commitmentId = item.id, eventType = "alerted",
+                            changeData = JSONObject().put("title", item.title)
+                                .put("due_at_millis", item.dueAtMillis)
+                                .put("status", item.status).toString(),
+                            actor = "alarm", idempotencyKey = key,
+                            occurredAtMillis = System.currentTimeMillis(), dirty = item.ownerId != "guest"
+                        ))
                     }
                 } else {
                     scheduler.restore()

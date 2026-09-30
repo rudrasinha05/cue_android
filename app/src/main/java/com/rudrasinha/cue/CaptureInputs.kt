@@ -3,8 +3,15 @@ package com.rudrasinha.cue
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.graphics.Bitmap
+import android.graphics.Color
+import android.graphics.pdf.PdfRenderer
 import android.provider.OpenableColumns
 import android.util.Xml
+import com.google.android.gms.tasks.Tasks
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.rudrasinha.cue.data.CaptureOrigin
 import com.rudrasinha.cue.ui.CaptureDraft
 import java.io.ByteArrayInputStream
@@ -31,7 +38,13 @@ internal fun importedText(context: Context, uri: Uri): CaptureDraft {
         if (it.moveToFirst()) it.getString(0) else null
     } ?: "Document"
     val mime = resolver.getType(uri).orEmpty()
-    val documentText = if (mime == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    val isImage = mime.startsWith("image/") || listOf(".jpg", ".jpeg", ".png", ".webp")
+        .any { name.endsWith(it, true) }
+    val documentText = if (mime == "application/pdf" || name.endsWith(".pdf", true)) {
+        extractPdf(context, uri)
+    } else if (isImage) {
+        recognize(InputImage.fromFilePath(context, uri))
+    } else if (mime == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
         name.endsWith(".docx", ignoreCase = true)) {
         resolver.openInputStream(uri)?.use(::extractDocx)
     } else if (mime.startsWith("text/") || mime == "application/csv" ||
@@ -40,9 +53,44 @@ internal fun importedText(context: Context, uri: Uri): CaptureDraft {
         resolver.openInputStream(uri)?.use { it.readLimited(64 * 1024).toString(Charsets.UTF_8) }
     } else null
     val text = documentText?.trim()?.take(4000)?.takeIf { it.isNotEmpty() }
-        ?: error("Choose a text, CSV, TSV, Markdown or DOCX file with readable text.")
+        ?: error("No readable text found. Try a clearer image or a text, PDF or DOCX file.")
     return CaptureDraft(UUID.randomUUID().toString(), text,
-        CaptureOrigin("document", name, text, uri.toString()))
+        CaptureOrigin(if (isImage) "image" else "document", name, text, uri.toString()))
+}
+
+private fun recognize(image: InputImage): String {
+    val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+    return try { Tasks.await(recognizer.process(image)).text }
+    finally { recognizer.close() }
+}
+
+private fun extractPdf(context: Context, uri: Uri): String {
+    val descriptor = context.contentResolver.openFileDescriptor(uri, "r")
+        ?: error("Could not open this PDF.")
+    descriptor.use { file ->
+        PdfRenderer(file).use { renderer ->
+            require(renderer.pageCount <= 20) { "This PDF has over 20 pages. Split it and import a smaller part." }
+            val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+            try {
+                val pages = StringBuilder()
+                repeat(renderer.pageCount) { index ->
+                    renderer.openPage(index).use { page ->
+                        val scale = minOf(2f, 2048f / maxOf(page.width, page.height))
+                        val bitmap = Bitmap.createBitmap(
+                            maxOf(1, (page.width * scale).toInt()),
+                            maxOf(1, (page.height * scale).toInt()), Bitmap.Config.ARGB_8888)
+                        try {
+                            bitmap.eraseColor(Color.WHITE)
+                            page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                            val text = Tasks.await(recognizer.process(InputImage.fromBitmap(bitmap, 0))).text
+                            if (text.isNotBlank()) pages.append(text).append('\n')
+                        } finally { bitmap.recycle() }
+                    }
+                }
+                return pages.toString()
+            } finally { recognizer.close() }
+        }
+    }
 }
 
 private fun extractDocx(input: InputStream): String {
