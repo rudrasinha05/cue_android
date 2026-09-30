@@ -100,156 +100,159 @@ fun CommitmentListScreen(
                 .thenBy { it.title.lowercase() }) }
     val isCompleted = !upcoming && selectedView == ReminderView.COMPLETED
 
-    Box(modifier.fillMaxSize().background(Brush.verticalGradient(
-        listOf(canvasTop, canvasMiddle, canvasTop)))) {
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp)) {
-            Spacer(Modifier.height(24.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(if (upcoming) "Calendar" else "Reminder", color = ivory,
-                    style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f))
-                IconButton(onClick = { searchOpen = !searchOpen; if (!searchOpen) query = "" }) {
-                    Icon(Icons.Outlined.Search, contentDescription = "Search reminders", tint = ivory)
-                }
-                Box {
-                    IconButton(onClick = { menuOpen = true }) {
-                        Icon(Icons.Filled.MoreVert, contentDescription = "Sort reminders", tint = ivory)
+    MaterialTheme(colorScheme = darkColorScheme(primary = violet, background = canvasTop,
+        surface = cardColor, onSurface = ivory, onSurfaceVariant = muted)) {
+        Box(modifier.fillMaxSize().background(Brush.verticalGradient(
+            listOf(canvasTop, canvasMiddle, canvasTop)))) {
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)) {
+                Spacer(Modifier.height(24.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(if (upcoming) "Calendar" else "Reminder", color = ivory,
+                        style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f))
+                    IconButton(onClick = { searchOpen = !searchOpen; if (!searchOpen) query = "" }) {
+                        Icon(Icons.Outlined.Search, contentDescription = "Search reminders", tint = ivory)
                     }
-                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                        DropdownMenuItem(text = { Text("Sort by time") },
-                            onClick = { sortByTitle = false; menuOpen = false })
-                        DropdownMenuItem(text = { Text("Sort by title") },
-                            onClick = { sortByTitle = true; menuOpen = false })
-                    }
-                }
-            }
-            if (searchOpen) {
-                Spacer(Modifier.height(10.dp))
-                OutlinedTextField(value = query, onValueChange = { query = it },
-                    modifier = Modifier.fillMaxWidth(), singleLine = true,
-                    label = { Text("Search reminders") },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = ivory, unfocusedTextColor = ivory,
-                        focusedLabelColor = violet, unfocusedLabelColor = muted,
-                        focusedBorderColor = violet, unfocusedBorderColor = muted))
-            }
-            Spacer(Modifier.height(22.dp))
-
-            if (upcoming) {
-                Surface(shape = RoundedCornerShape(28.dp), color = cardColor) {
-                    Column(Modifier.fillMaxWidth().padding(18.dp)) {
-                        CalendarGrid(visibleMonth, selectedDate,
-                            active.mapNotNull(::dateOf).groupingBy { it }.eachCount(),
-                            onPrevious = {
-                                visibleMonth = visibleMonth.minusMonths(1)
-                                selectedDate = visibleMonth.atDay(1)
-                            }, onNext = {
-                                visibleMonth = visibleMonth.plusMonths(1)
-                                selectedDate = visibleMonth.atDay(1)
-                            }, onDate = { selectedDate = it })
-                    }
-                }
-                Spacer(Modifier.height(14.dp))
-                TextButton(onClick = { selectedDate = today; visibleMonth = YearMonth.from(today) }) {
-                    Text("Jump to today", color = violet)
-                }
-            } else {
-                ReminderView.entries.chunked(3).forEach { row ->
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        row.forEach { view ->
-                            CategoryTile(view, matching(view).size,
-                                selected = selectedView == view,
-                                modifier = Modifier.weight(1f)) { selectedView = view }
+                    Box {
+                        IconButton(onClick = { menuOpen = true }) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = "Sort reminders", tint = ivory)
+                        }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            DropdownMenuItem(text = { Text("Sort by time") },
+                                onClick = { sortByTitle = false; menuOpen = false })
+                            DropdownMenuItem(text = { Text("Sort by title") },
+                                onClick = { sortByTitle = true; menuOpen = false })
                         }
                     }
+                }
+                if (searchOpen) {
                     Spacer(Modifier.height(10.dp))
+                    OutlinedTextField(value = query, onValueChange = { query = it },
+                        modifier = Modifier.fillMaxWidth(), singleLine = true,
+                        label = { Text("Search reminders") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = ivory, unfocusedTextColor = ivory,
+                            focusedLabelColor = violet, unfocusedLabelColor = muted,
+                            focusedBorderColor = violet, unfocusedBorderColor = muted))
                 }
-            }
+                Spacer(Modifier.height(22.dp))
 
-            if (!notificationsAllowed && active.any { it.dueAtMillis != null }) {
-                Notice("Notifications are off. Alerts won't appear.",
-                    "Open settings", onNotificationAccess)
-            }
-            if (!exactAvailable && active.any { it.dueAtMillis != null }) {
-                Notice("Some alerts may arrive a little late.",
-                    "Allow precise timing", onExactAccess)
-            }
-            message?.let { Text(it, color = violet, modifier = Modifier.padding(vertical = 10.dp),
-                style = MaterialTheme.typography.bodySmall) }
-
-            Spacer(Modifier.height(if (upcoming) 12.dp else 18.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(if (upcoming) selectedDate.format(dayFormat)
-                    else if (selectedView == ReminderView.ALL) "Your reminders" else selectedView.label,
-                    color = ivory, fontWeight = FontWeight.SemiBold,
-                    style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                Text("${visibleItems.size}", color = muted, style = MaterialTheme.typography.bodyMedium)
-            }
-            Spacer(Modifier.height(12.dp))
-            if (visibleItems.isEmpty()) {
-                EmptyReminderState(
-                    when {
-                        query.isNotBlank() -> "No reminders match your search."
-                        upcoming -> "Nothing planned for this day."
-                        isCompleted -> "Completed reminders will appear here."
-                        selectedView != ReminderView.ALL -> "Nothing here yet."
-                        else -> "A fresh start. Add something you want to remember."
-                    })
-            } else {
-                val sections = if (!upcoming && selectedView == ReminderView.ALL) listOf(
-                    "Past" to visibleItems.filter { (it.dueAtMillis ?: Long.MAX_VALUE) < now },
-                    "Today" to visibleItems.filter { dateOf(it) == today &&
-                        (it.dueAtMillis ?: 0L) >= now },
-                    "Coming up" to visibleItems.filter { dateOf(it)?.isAfter(today) == true },
-                    "No alert" to visibleItems.filter { it.dueAtMillis == null }
-                ) else listOf("" to visibleItems)
-                sections.forEach { (heading, items) ->
-                    if (items.isNotEmpty()) {
-                        if (heading.isNotEmpty()) {
-                            Text(heading, color = muted, style = MaterialTheme.typography.bodyMedium,
-                                modifier = Modifier.padding(top = 8.dp, bottom = 10.dp))
+                if (upcoming) {
+                    Surface(shape = RoundedCornerShape(28.dp), color = cardColor) {
+                        Column(Modifier.fillMaxWidth().padding(18.dp)) {
+                            CalendarGrid(visibleMonth, selectedDate,
+                                active.mapNotNull(::dateOf).groupingBy { it }.eachCount(),
+                                onPrevious = {
+                                    visibleMonth = visibleMonth.minusMonths(1)
+                                    selectedDate = visibleMonth.atDay(1)
+                                }, onNext = {
+                                    visibleMonth = visibleMonth.plusMonths(1)
+                                    selectedDate = visibleMonth.atDay(1)
+                                }, onDate = { selectedDate = it })
                         }
-                        items.forEach { item ->
-                            key(item.id) {
-                                ReminderCard(item, now, isCompleted, onEdit = { openEditor(item) },
-                                    onComplete = { onComplete(item.id) }, onSnooze = { onSnooze(item.id) },
-                                    onArchive = { onArchive(item.id) })
-                                Spacer(Modifier.height(12.dp))
+                    }
+                    Spacer(Modifier.height(14.dp))
+                    TextButton(onClick = { selectedDate = today; visibleMonth = YearMonth.from(today) }) {
+                        Text("Jump to today", color = violet)
+                    }
+                } else {
+                    ReminderView.entries.chunked(3).forEach { row ->
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            row.forEach { view ->
+                                CategoryTile(view, matching(view).size,
+                                    selected = selectedView == view,
+                                    modifier = Modifier.weight(1f)) { selectedView = view }
+                            }
+                        }
+                        Spacer(Modifier.height(10.dp))
+                    }
+                }
+
+                if (!notificationsAllowed && active.any { it.dueAtMillis != null }) {
+                    Notice("Notifications are off. Alerts won't appear.",
+                        "Open settings", onNotificationAccess)
+                }
+                if (!exactAvailable && active.any { it.dueAtMillis != null }) {
+                    Notice("Some alerts may arrive a little late.",
+                        "Allow precise timing", onExactAccess)
+                }
+                message?.let { Text(it, color = violet, modifier = Modifier.padding(vertical = 10.dp),
+                    style = MaterialTheme.typography.bodySmall) }
+
+                Spacer(Modifier.height(if (upcoming) 12.dp else 18.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(if (upcoming) selectedDate.format(dayFormat)
+                        else if (selectedView == ReminderView.ALL) "Your reminders" else selectedView.label,
+                        color = ivory, fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    Text("${visibleItems.size}", color = muted, style = MaterialTheme.typography.bodyMedium)
+                }
+                Spacer(Modifier.height(12.dp))
+                if (visibleItems.isEmpty()) {
+                    EmptyReminderState(
+                        when {
+                            query.isNotBlank() -> "No reminders match your search."
+                            upcoming -> "Nothing planned for this day."
+                            isCompleted -> "Completed reminders will appear here."
+                            selectedView != ReminderView.ALL -> "Nothing here yet."
+                            else -> "A fresh start. Add something you want to remember."
+                        })
+                } else {
+                    val sections = if (!upcoming && selectedView == ReminderView.ALL) listOf(
+                        "Past" to visibleItems.filter { (it.dueAtMillis ?: Long.MAX_VALUE) < now },
+                        "Today" to visibleItems.filter { dateOf(it) == today &&
+                            (it.dueAtMillis ?: 0L) >= now },
+                        "Coming up" to visibleItems.filter { dateOf(it)?.isAfter(today) == true },
+                        "No alert" to visibleItems.filter { it.dueAtMillis == null }
+                    ) else listOf("" to visibleItems)
+                    sections.forEach { (heading, items) ->
+                        if (items.isNotEmpty()) {
+                            if (heading.isNotEmpty()) {
+                                Text(heading, color = muted, style = MaterialTheme.typography.bodyMedium,
+                                    modifier = Modifier.padding(top = 8.dp, bottom = 10.dp))
+                            }
+                            items.forEach { item ->
+                                key(item.id) {
+                                    ReminderCard(item, now, isCompleted, onEdit = { openEditor(item) },
+                                        onComplete = { onComplete(item.id) }, onSnooze = { onSnooze(item.id) },
+                                        onArchive = { onArchive(item.id) })
+                                    Spacer(Modifier.height(12.dp))
+                                }
                             }
                         }
                     }
                 }
-            }
 
-            if (!upcoming && active.isEmpty() && query.isBlank() && selectedView == ReminderView.ALL) {
-                Spacer(Modifier.height(24.dp))
-                Text("A few ideas", color = muted, style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.height(12.dp))
-                listOf("Call home", "Pick up groceries", "Plan my week").forEach { idea ->
-                    Surface(onClick = { openEditor(suggestedTitle = idea) },
-                        shape = RoundedCornerShape(22.dp), color = cardColor,
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
-                        Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Outlined.Lightbulb, contentDescription = null, tint = amber)
-                            Spacer(Modifier.width(16.dp))
-                            Text(idea, color = ivory, modifier = Modifier.weight(1f))
-                            Icon(Icons.Filled.Add, contentDescription = null, tint = muted)
+                if (!upcoming && active.isEmpty() && query.isBlank() && selectedView == ReminderView.ALL) {
+                    Spacer(Modifier.height(24.dp))
+                    Text("A few ideas", color = muted, style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(12.dp))
+                    listOf("Call home", "Pick up groceries", "Plan my week").forEach { idea ->
+                        Surface(onClick = { openEditor(suggestedTitle = idea) },
+                            shape = RoundedCornerShape(22.dp), color = cardColor,
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
+                            Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Outlined.Lightbulb, contentDescription = null, tint = amber)
+                                Spacer(Modifier.width(16.dp))
+                                Text(idea, color = ivory, modifier = Modifier.weight(1f))
+                                Icon(Icons.Filled.Add, contentDescription = null, tint = muted)
+                            }
                         }
                     }
                 }
+                Spacer(Modifier.height(104.dp))
             }
-            Spacer(Modifier.height(104.dp))
-        }
-        Button(onClick = { openEditor() },
-            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp),
-            shape = RoundedCornerShape(50.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF373142), contentColor = ivory),
-            border = BorderStroke(1.dp, Color(0xFF5B526A)),
-            contentPadding = PaddingValues(horizontal = 26.dp, vertical = 16.dp)) {
-            Text("Add reminder", fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.width(30.dp))
-            Icon(Icons.Filled.Add, contentDescription = null)
+            Button(onClick = { openEditor() },
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp),
+                shape = RoundedCornerShape(50.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF373142), contentColor = ivory),
+                border = BorderStroke(1.dp, Color(0xFF5B526A)),
+                contentPadding = PaddingValues(horizontal = 26.dp, vertical = 16.dp)) {
+                Text("Add reminder", fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.width(30.dp))
+                Icon(Icons.Filled.Add, contentDescription = null)
+            }
         }
     }
 
