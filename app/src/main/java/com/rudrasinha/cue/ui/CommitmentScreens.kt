@@ -129,10 +129,12 @@ fun CommitmentListScreen(
             }
         }
         visible.forEach { item ->
-            ReminderCard(item, now, onEdit = { editing = item; editorOpen = true },
-                onComplete = { onComplete(item.id) }, onSnooze = { onSnooze(item.id) },
-                onArchive = { onArchive(item.id) })
-            Spacer(Modifier.height(12.dp))
+            key(item.id) {
+                ReminderCard(item, now, onEdit = { editing = item; editorOpen = true },
+                    onComplete = { onComplete(item.id) }, onSnooze = { onSnooze(item.id) },
+                    onArchive = { onArchive(item.id) })
+                Spacer(Modifier.height(12.dp))
+            }
         }
         if (!upcoming && completed.isNotEmpty()) {
             Spacer(Modifier.height(12.dp))
@@ -221,7 +223,8 @@ private fun ReminderEditor(
         text = {
             Column {
                 OutlinedTextField(title, { title = it }, modifier = Modifier.fillMaxWidth(),
-                    label = { Text("What do you want to remember?") }, singleLine = true)
+                    label = { Text("Reminder title") }, placeholder = { Text("e.g. Call home") },
+                    singleLine = true)
                 Spacer(Modifier.height(10.dp))
                 OutlinedTextField(details, { details = it }, modifier = Modifier.fillMaxWidth(),
                     label = { Text("Note (optional)") }, maxLines = 3)
