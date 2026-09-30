@@ -228,6 +228,20 @@ private fun CueApp(
                     { id -> perform("Marked done.") { actions.complete(ownerId, id) } },
                     { id -> perform("Reminder moved 10 minutes ahead.") { actions.snooze(ownerId, id) } },
                     { id -> perform("Reminder archived.") { actions.archive(ownerId, id) } },
+                    userId != null,
+                    {
+                        if (userId != null && !accountBusy) scope.launch {
+                            accountBusy = true
+                            try {
+                                cloud.restoreAndClaim(userId)
+                                scheduler.restore()
+                                reminderMessage = "Reminders synced."
+                            } catch (e: Exception) {
+                                reminderMessage = "Sync paused: ${e.message ?: "check your connection"}"
+                            } finally { accountBusy = false }
+                        }
+                    },
+                    { selected = Tab.YOU },
                     Modifier.padding(padding)
                 )
                 Tab.AI -> EmptyScreen("Ask Cue", "Your conversations will appear here.", Icons.Default.AutoAwesome, padding)

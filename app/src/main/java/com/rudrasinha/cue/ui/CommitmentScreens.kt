@@ -8,10 +8,12 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.Lightbulb
+import androidx.compose.material.icons.outlined.Notes
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.*
@@ -20,7 +22,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -62,6 +69,7 @@ fun CommitmentListScreen(
     onExactAccess: () -> Unit, onNotificationAccess: () -> Unit,
     onSave: (String?, String, String?, Long?) -> Unit,
     onComplete: (String) -> Unit, onSnooze: (String) -> Unit, onArchive: (String) -> Unit,
+    signedIn: Boolean, onSync: () -> Unit, onSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var selectedView by remember { mutableStateOf(ReminderView.ALL) }
@@ -117,13 +125,25 @@ fun CommitmentListScreen(
                     }
                     Box {
                         IconButton(onClick = { menuOpen = true }) {
-                            Icon(Icons.Filled.MoreVert, contentDescription = "Sort reminders", tint = ivory)
+                            Icon(Icons.Filled.MoreVert, contentDescription = "More options", tint = ivory,
+                                modifier = Modifier.size(28.dp))
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            DropdownMenuItem(text = { Text(if (signedIn) "Sync now" else "Sign in to sync") },
+                                onClick = {
+                                    menuOpen = false
+                                    if (signedIn) onSync() else onSettings()
+                                })
+                            HorizontalDivider()
                             DropdownMenuItem(text = { Text("Sort by time") },
+                                trailingIcon = { if (!sortByTitle) Icon(Icons.Filled.Check, null) },
                                 onClick = { sortByTitle = false; menuOpen = false })
                             DropdownMenuItem(text = { Text("Sort by title") },
+                                trailingIcon = { if (sortByTitle) Icon(Icons.Filled.Check, null) },
                                 onClick = { sortByTitle = true; menuOpen = false })
+                            HorizontalDivider()
+                            DropdownMenuItem(text = { Text("Settings") },
+                                onClick = { menuOpen = false; onSettings() })
                         }
                     }
                 }
@@ -427,8 +447,12 @@ private fun ReminderEditor(item: CommitmentEntity?, suggestedTitle: String, init
     var alertEnabled by remember(item?.id) { mutableStateOf(initialDue != null) }
     var chosenDate by remember(item?.id) { mutableStateOf(initialDue?.toLocalDate() ?: startDate) }
     var month by remember(item?.id) { mutableStateOf(YearMonth.from(chosenDate)) }
+    var showNote by remember(item?.id) { mutableStateOf(!item?.details.isNullOrBlank()) }
     var showCalendar by remember { mutableStateOf(false) }
     var showTime by remember { mutableStateOf(false) }
+    val titleFocus = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
     val initialTime = initialDue?.toLocalTime() ?: suggestedStart.toLocalTime()
     val timeState = rememberTimePickerState(initialHour = initialTime.hour,
         initialMinute = initialTime.minute, is24Hour = false)
@@ -443,56 +467,44 @@ private fun ReminderEditor(item: CommitmentEntity?, suggestedTitle: String, init
             containerColor = Color(0xFF24212D), contentColor = ivory,
             dragHandle = { Surface(shape = CircleShape, color = Color(0xFF6A6078),
                 modifier = Modifier.padding(top = 12.dp).size(width = 38.dp, height = 4.dp)) {} }) {
-            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp).padding(bottom = 28.dp)) {
-                Spacer(Modifier.height(14.dp))
-                Text(if (item == null) "New reminder" else "Edit reminder", color = ivory,
-                    style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                Text("Keep it in mind, right on time.", color = muted,
-                    style = MaterialTheme.typography.bodyMedium)
+            LaunchedEffect(Unit) { titleFocus.requestFocus(); keyboard?.show() }
+            Column(Modifier.fillMaxWidth().imePadding().verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp).padding(bottom = 18.dp)) {
                 Spacer(Modifier.height(22.dp))
-                OutlinedTextField(value = title, onValueChange = { title = it },
-                    label = { Text("What do you need to remember?") },
-                    placeholder = { Text("e.g. Call home") },
-                    singleLine = true, modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp))
-                Spacer(Modifier.height(12.dp))
-                OutlinedTextField(value = details, onValueChange = { details = it },
-                    label = { Text("Add a note (optional)") }, maxLines = 3,
-                    modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp))
-                Spacer(Modifier.height(22.dp))
-                Surface(onClick = {
-                    alertEnabled = !alertEnabled
-                    showCalendar = false
-                    showTime = false
-                }, shape = RoundedCornerShape(18.dp), color = Color(0xFF373144)) {
-                    Row(Modifier.fillMaxWidth().padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.Schedule, contentDescription = null, tint = sky)
-                        Spacer(Modifier.width(14.dp))
-                        Text("Set an alert", color = ivory, modifier = Modifier.weight(1f))
-                        Text(if (alertEnabled) "On" else "Off", color = if (alertEnabled) violet else muted,
-                            fontWeight = FontWeight.SemiBold)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    BasicTextField(value = title, onValueChange = { title = it },
+                        modifier = Modifier.weight(1f).focusRequester(titleFocus),
+                        singleLine = true, cursorBrush = SolidColor(sky),
+                        textStyle = MaterialTheme.typography.titleLarge.copy(color = ivory),
+                        decorationBox = { inner ->
+                            Box {
+                                if (title.isEmpty()) Text("Add reminder", color = muted,
+                                    style = MaterialTheme.typography.titleLarge)
+                                inner()
+                            }
+                        })
+                    Spacer(Modifier.width(14.dp))
+                    IconButton(onClick = { onSave(title.trim(), details.trim().ifBlank { null }, due) },
+                        enabled = valid,
+                        modifier = Modifier.size(52.dp).background(
+                            if (valid) sky else Color(0xFF465062), CircleShape)) {
+                        Icon(Icons.Filled.Check, contentDescription = "Save reminder",
+                            tint = if (valid) canvasTop else muted, modifier = Modifier.size(28.dp))
                     }
+                }
+                if (showNote) {
+                    Spacer(Modifier.height(16.dp))
+                    OutlinedTextField(value = details, onValueChange = { details = it },
+                        label = { Text("Note") }, placeholder = { Text("Add details") },
+                        modifier = Modifier.fillMaxWidth(), maxLines = 4,
+                        shape = RoundedCornerShape(16.dp))
                 }
                 if (alertEnabled) {
                     Spacer(Modifier.height(12.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Surface(onClick = { showCalendar = !showCalendar; showTime = false },
-                            shape = RoundedCornerShape(16.dp), color = Color(0xFF373144),
-                            modifier = Modifier.weight(1f)) {
-                            Text(chosenDate.format(DateTimeFormatter.ofPattern("d MMM yyyy")),
-                                color = ivory, modifier = Modifier.padding(14.dp),
-                                style = MaterialTheme.typography.bodyMedium)
-                        }
-                        Surface(onClick = { showTime = !showTime; showCalendar = false },
-                            shape = RoundedCornerShape(16.dp), color = Color(0xFF373144)) {
-                            Text(LocalTime.of(timeState.hour, timeState.minute)
-                                .format(DateTimeFormatter.ofPattern("h:mm a")),
-                                color = ivory, modifier = Modifier.padding(14.dp),
-                                style = MaterialTheme.typography.bodyMedium)
-                        }
-                    }
+                    Text("Alert · ${chosenDate.format(DateTimeFormatter.ofPattern("d MMM"))} · " +
+                        LocalTime.of(timeState.hour, timeState.minute)
+                            .format(DateTimeFormatter.ofPattern("h:mm a")),
+                        color = sky, style = MaterialTheme.typography.bodySmall)
                     if (showCalendar) {
                         Spacer(Modifier.height(14.dp))
                         CalendarGrid(month, chosenDate, emptyMap(),
@@ -516,16 +528,37 @@ private fun ReminderEditor(item: CommitmentEntity?, suggestedTitle: String, init
                     }
                 }
                 Spacer(Modifier.height(24.dp))
-                Button(onClick = { onSave(title.trim(), details.trim().ifBlank { null }, due) },
-                    enabled = valid, modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    contentPadding = PaddingValues(16.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = violet,
-                        contentColor = canvasTop)) {
-                    Text(if (item == null) "Add reminder" else "Save changes",
-                        fontWeight = FontWeight.Bold)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    QuickAction(Icons.Outlined.Notes, "Add note", showNote) { showNote = !showNote }
+                    QuickAction(Icons.Filled.CalendarMonth, "Choose date", showCalendar) {
+                        alertEnabled = true; showCalendar = !showCalendar; showTime = false
+                        focusManager.clearFocus(); keyboard?.hide()
+                    }
+                    QuickAction(Icons.Filled.Schedule, "Choose time", showTime) {
+                        alertEnabled = true; showTime = !showTime; showCalendar = false
+                        focusManager.clearFocus(); keyboard?.hide()
+                    }
+                    QuickAction(Icons.Filled.NotificationsOff, "Toggle alert", !alertEnabled) {
+                        alertEnabled = !alertEnabled; showCalendar = false; showTime = false
+                    }
+                    QuickAction(Icons.Filled.FormatListBulleted, "Add bulleted note", false) {
+                        details += if (details.isBlank()) "• " else "\n• "
+                        showNote = true
+                    }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun QuickAction(icon: ImageVector, description: String, selected: Boolean,
+    onClick: () -> Unit) {
+    Surface(onClick = onClick, modifier = Modifier.size(50.dp), shape = CircleShape,
+        color = Color(0xFF0B0B0E),
+        border = if (selected) BorderStroke(1.dp, violet) else null) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(icon, contentDescription = description, tint = ivory, modifier = Modifier.size(24.dp))
         }
     }
 }
