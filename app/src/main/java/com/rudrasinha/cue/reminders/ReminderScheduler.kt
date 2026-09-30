@@ -21,6 +21,10 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 class ReminderScheduler(private val context: Context) {
+    companion object {
+        private const val PRIMARY = "com.rudrasinha.cue.REMIND"
+        private const val BACKUP = "com.rudrasinha.cue.REMIND_BACKUP"
+    }
     private val alarms = context.getSystemService(AlarmManager::class.java)
     private val preferences = context.getSharedPreferences("cue_active_owner", Context.MODE_PRIVATE)
 
@@ -33,21 +37,25 @@ class ReminderScheduler(private val context: Context) {
     fun exactAvailable(): Boolean = Build.VERSION.SDK_INT < 31 || alarms.canScheduleExactAlarms()
 
     fun cancel(item: CommitmentEntity) {
-        alarms.cancel(pending(item.id, item.dueAtMillis ?: 0L))
+        alarms.cancel(pending(item.id, item.dueAtMillis ?: 0L, PRIMARY))
+        alarms.cancel(pending(item.id, item.dueAtMillis ?: 0L, BACKUP))
     }
 
     fun schedule(item: CommitmentEntity) {
         cancel(item)
         val due = item.dueAtMillis ?: return
         if (item.status != "active" || due <= System.currentTimeMillis()) return
-        val operation = pending(item.id, due)
+        val operation = pending(item.id, due, PRIMARY)
         if (exactAvailable()) {
             try {
                 alarms.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, due, operation)
+                // This survives a later revocation of exact-alarm access.
+                alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, due + 5 * 60_000L,
+                    pending(item.id, due, BACKUP))
                 return
             } catch (_: SecurityException) { /* Special access may have changed. */ }
         }
-        alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, due, operation)
+        alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, due, pending(item.id, due, BACKUP))
     }
 
     suspend fun cancelOwner(id: String) {
@@ -61,9 +69,17 @@ class ReminderScheduler(private val context: Context) {
         activeOwnerId()?.let { owner -> dao.futureAlarms(owner, now).forEach(::schedule) }
     }
 
-    private fun pending(id: String, due: Long): PendingIntent {
+    fun wasDelivered(item: CommitmentEntity): Boolean =
+        preferences.getLong("delivered_${item.id}", -1L) == item.dueAtMillis
+
+    fun markDelivered(item: CommitmentEntity) {
+        preferences.edit().putLong("delivered_${item.id}", item.dueAtMillis ?: -1L).commit()
+        cancel(item)
+    }
+
+    private fun pending(id: String, due: Long, actionName: String): PendingIntent {
         val intent = Intent(context, ReminderReceiver::class.java).apply {
-            action = "com.rudrasinha.cue.REMIND"
+            action = actionName
             data = Uri.parse("cue://commitment/$id")
             putExtra("id", id)
             putExtra("due", due)
@@ -74,17 +90,23 @@ class ReminderScheduler(private val context: Context) {
 }
 
 class ReminderReceiver : BroadcastReceiver() {
+    companion object { private val deliveryLock = Any() }
     override fun onReceive(context: Context, intent: Intent) {
         val result = goAsync()
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
                 val scheduler = ReminderScheduler(context)
-                if (intent.action == "com.rudrasinha.cue.REMIND") {
+                if (intent.action == "com.rudrasinha.cue.REMIND" ||
+                    intent.action == "com.rudrasinha.cue.REMIND_BACKUP") {
                     val id = intent.getStringExtra("id") ?: return@launch
                     val item = CueDatabase.get(context).commitments().byId(id) ?: return@launch
                     if (item.status != "active" || item.dueAtMillis != intent.getLongExtra("due", -1L)) return@launch
                     if (item.ownerId != "guest" && item.ownerId != scheduler.activeOwnerId()) return@launch
-                    showNotification(context, item)
+                    synchronized(deliveryLock) {
+                        if (!scheduler.wasDelivered(item) && showNotification(context, item)) {
+                            scheduler.markDelivered(item)
+                        }
+                    }
                 } else {
                     scheduler.restore()
                 }
@@ -94,9 +116,9 @@ class ReminderReceiver : BroadcastReceiver() {
         }
     }
 
-    private fun showNotification(context: Context, item: CommitmentEntity) {
+    private fun showNotification(context: Context, item: CommitmentEntity): Boolean {
         if (Build.VERSION.SDK_INT >= 33 &&
-            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
+            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return false
         val manager = context.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel("cue_reminders", "Cue reminders",
             NotificationManager.IMPORTANCE_HIGH))
@@ -109,7 +131,7 @@ class ReminderReceiver : BroadcastReceiver() {
             .setContentIntent(open)
             .setAutoCancel(true)
             .build()
-        try { manager.notify(item.id.hashCode(), notice) }
-        catch (_: SecurityException) { /* Notification permission was revoked. */ }
+        return try { manager.notify(item.id.hashCode(), notice); true }
+        catch (_: SecurityException) { false }
     }
 }
