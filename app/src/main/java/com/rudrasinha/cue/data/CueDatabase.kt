@@ -80,8 +80,8 @@ interface CommitmentDao {
     @Query("SELECT * FROM commitments WHERE id = :id LIMIT 1")
     suspend fun byId(id: String): CommitmentEntity?
 
-    @Query("SELECT * FROM commitments WHERE ownerId = :ownerId AND status = 'active' AND title = :title AND dueAtMillis = :due LIMIT 1")
-    suspend fun sameActiveReminder(ownerId: String, title: String, due: Long): CommitmentEntity?
+    @Query("SELECT * FROM commitments WHERE ownerId = :ownerId AND status = 'active' AND dueAtMillis = :due")
+    suspend fun activeAtDue(ownerId: String, due: Long): List<CommitmentEntity>
 
     @Query("SELECT * FROM commitments WHERE ownerId = :ownerId AND status = 'active' AND dueAtMillis > :now")
     suspend fun futureAlarms(ownerId: String, now: Long): List<CommitmentEntity>
@@ -110,6 +110,9 @@ interface CommitmentDao {
 
 @Dao
 interface HistoryDao {
+    @Query("SELECT * FROM sources WHERE ownerId = :ownerId AND originType = :type AND originKey = :key LIMIT 1")
+    suspend fun sourceByOrigin(ownerId: String, type: String, key: String): SourceEntity?
+
     @Query("SELECT * FROM sources WHERE ownerId = :ownerId ORDER BY capturedAtMillis DESC")
     fun observeSources(ownerId: String): Flow<List<SourceEntity>>
 
@@ -159,7 +162,7 @@ interface HistoryDao {
     suspend fun insertEvent(event: ReminderEventEntity)
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun insertSource(source: SourceEntity)
+    suspend fun insertSource(source: SourceEntity): Long
 
     @Query("DELETE FROM sources WHERE ownerId = :ownerId AND dirty = 0")
     suspend fun removeSourceCache(ownerId: String)

@@ -146,6 +146,15 @@ fun HistoryScreen(events: List<ReminderEventEntity>, sources: List<SourceEntity>
     var sourceError by remember { mutableStateOf(false) }
     val sourceByReminder = remember(sources) { sources.groupBy { it.commitmentId } }
     val archived = remember(batches) { batches.map { runCatching { HistoryArchive.read(it) } } }
+    fun sourceFor(event: ReminderEventEntity): SourceEntity? {
+        val linked = sourceByReminder[event.commitmentId].orEmpty()
+        val sourceId = event.snapshot().optString("source_id")
+        return linked.firstOrNull { it.id == sourceId } ?: linked.firstOrNull()
+    }
+    fun eventLabel(event: ReminderEventEntity): String =
+        if (event.eventType == "source_added") "Source added"
+        else event.eventType.replaceFirstChar { it.uppercase() }
+
     val allEvents = (events + archived.flatMap { it.getOrDefault(emptyList()) })
         .distinctBy { it.id }.sortedWith(compareByDescending<ReminderEventEntity> { it.occurredAtMillis }
             .thenByDescending { it.id })
@@ -184,7 +193,7 @@ fun HistoryScreen(events: List<ReminderEventEntity>, sources: List<SourceEntity>
             }
         }
         visible.forEach { event ->
-            val source = sourceByReminder[event.commitmentId]?.firstOrNull()
+            val source = sourceFor(event)
             Surface(shape = RoundedCornerShape(22.dp), color = panel,
                 modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
                     .clickable { selected = event; sourceError = false }) {
@@ -196,9 +205,9 @@ fun HistoryScreen(events: List<ReminderEventEntity>, sources: List<SourceEntity>
                         Text(event.snapshot().optString("title", "Reminder"), color = pale,
                             fontWeight = FontWeight.SemiBold, maxLines = 2,
                             overflow = TextOverflow.Ellipsis)
-                        Text("${event.eventType.replaceFirstChar { it.uppercase() }} · ${event.dateLabel()}",
+                        Text("${eventLabel(event)} · ${event.dateLabel()}",
                             color = subdued, style = MaterialTheme.typography.bodySmall)
-                        if (source != null) Text("From ${source.originType}${source.title?.let { " · $it" }.orEmpty()}",
+                        if (source != null) Text("From ${source.originType}${source.title?.let { " · $it" }.orEmpty()} · ${sourceByReminder[event.commitmentId]?.size ?: 1} sources",
                             color = purple, style = MaterialTheme.typography.bodySmall,
                             maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
@@ -209,13 +218,13 @@ fun HistoryScreen(events: List<ReminderEventEntity>, sources: List<SourceEntity>
         Spacer(Modifier.height(30.dp))
     }
     selected?.let { event ->
-        val source = sourceByReminder[event.commitmentId]?.firstOrNull()
+        val source = sourceFor(event)
         AlertDialog(onDismissRequest = { selected = null },
             containerColor = panel, titleContentColor = pale, textContentColor = subdued,
             title = { Text(event.snapshot().optString("title", "Reminder")) },
             text = {
                 Column {
-                    Text("${event.eventType.replaceFirstChar { it.uppercase() }} · ${event.dateLabel()}")
+                    Text("${eventLabel(event)} · ${event.dateLabel()}")
                     val snapshot = event.snapshot()
                     snapshot.optString("details").takeIf { it.isNotBlank() && it != "null" }?.let {
                         Text(it, modifier = Modifier.padding(top = 10.dp))

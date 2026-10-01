@@ -49,6 +49,28 @@ class CommitmentActions(
         return sync(ownerId)
     }
 
+    /** Attach a second capture to an existing reminder without creating another alarm. */
+    suspend fun linkSource(ownerId: String, id: String, origin: CaptureOrigin): Boolean {
+        val key = origin.key ?: return false
+        val reminder = dao.byId(id) ?: return false
+        if (reminder.ownerId != ownerId || reminder.status != "active") return false
+        val inserted = database.withTransaction {
+            if (database.history().sourceByOrigin(ownerId, origin.type, key) != null) return@withTransaction false
+            val now = System.currentTimeMillis()
+            val source = SourceEntity(UUID.randomUUID().toString(), ownerId, id, origin.type, key,
+                origin.title, origin.excerpt?.take(2000), origin.uri,
+                capturedAtMillis = now, dirty = ownerId != "guest")
+            if (database.history().insertSource(source) == -1L) return@withTransaction false
+            database.history().insertEvent(ReminderEventEntity(UUID.randomUUID().toString(), ownerId,
+                id, "source_added", JSONObject().put("source_id", source.id)
+                    .put("source_type", origin.type).put("title", reminder.title).toString(),
+                "capture", "source:${source.id}", now, ownerId != "guest"))
+            true
+        }
+        if (inserted) sync(ownerId)
+        return inserted
+    }
+
     suspend fun complete(ownerId: String, id: String): Boolean = change(ownerId, id, "completed") {
         it.copy(status = "completed", dueAtMillis = null)
     }

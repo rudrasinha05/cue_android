@@ -14,6 +14,7 @@ import com.rudrasinha.cue.data.CaptureOrigin
 import com.rudrasinha.cue.data.CloudCommitments
 import com.rudrasinha.cue.data.CommitmentActions
 import com.rudrasinha.cue.data.CueDatabase
+import com.rudrasinha.cue.data.ReminderMatch
 import com.rudrasinha.cue.reminders.ReminderScheduler
 import java.security.MessageDigest
 import java.time.Instant
@@ -49,17 +50,20 @@ class CaptureIntake(private val context: Context) {
         val ownerId = ReminderScheduler(context).activeOwnerId() ?: "guest"
         val database = CueDatabase.get(context)
         val result = saveLock.withLock {
-            if (database.commitments().sameActiveReminder(ownerId, title, due) != null) "Already saved"
-            else {
-                val key = MessageDigest.getInstance("SHA-256").digest(
-                    "${title.lowercase()}|$due".toByteArray(Charsets.UTF_8))
-                    .joinToString("") { "%02x".format(it) }
-                val actions = CommitmentActions(database, ReminderScheduler(context),
-                    CloudCommitments(database, CueAuth(context).client))
-                val details = if (type == "screen") null else content.take(2000)
-                val excerpt = if (type == "screen") title else content.take(2000)
-                val synced = actions.save(ownerId, null, title, details, due,
-                    CaptureOrigin(type, titleHint, excerpt, uri, key))
+            val key = MessageDigest.getInstance("SHA-256").digest(
+                "${title.lowercase()}|$due|${content.lowercase()}".toByteArray(Charsets.UTF_8))
+                .joinToString("") { "%02x".format(it) }
+            val actions = CommitmentActions(database, ReminderScheduler(context),
+                CloudCommitments(database, CueAuth(context).client))
+            val details = if (type == "screen") null else content.take(2000)
+            val excerpt = if (type == "screen") title else content.take(2000)
+            val origin = CaptureOrigin(type, titleHint, excerpt, uri, key)
+            val existing = ReminderMatch.existing(database.commitments().activeAtDue(ownerId, due), title)
+            if (existing != null) {
+                if (actions.linkSource(ownerId, existing.id, origin)) "Source linked to reminder"
+                else "Already saved"
+            } else {
+                val synced = actions.save(ownerId, null, title, details, due, origin)
                 if (synced) "Reminder added" else "Saved on this device"
             }
         }
