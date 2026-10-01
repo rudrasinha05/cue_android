@@ -1,0 +1,218 @@
+package com.rudrasinha.cue.assistant
+
+import android.app.Service
+import android.content.Intent
+import android.content.res.Configuration
+import android.graphics.Color
+import android.graphics.PixelFormat
+import android.graphics.drawable.GradientDrawable
+import android.os.Handler
+import android.os.IBinder
+import android.os.Looper
+import android.provider.Settings
+import android.view.Gravity
+import android.view.MotionEvent
+import android.view.View
+import android.view.WindowManager
+import android.widget.FrameLayout
+import android.widget.TextView
+import kotlin.math.abs
+
+class FloatingCueService : Service() {
+    private val windows by lazy { getSystemService(WindowManager::class.java) }
+    private val handler = Handler(Looper.getMainLooper())
+    private var root: FrameLayout? = null
+    private var expanded = false
+    private var rightEdge = true
+    private var centerY = 0
+    private var opacity = 0.82f
+    private var panel = false
+    private val size get() = dp(64)
+    private val menuWidth get() = dp(260)
+    private val menuHeight get() = dp(390)
+    private val hidden get() = dp(14)
+    private val screenWidth get() = resources.displayMetrics.widthPixels
+    private val screenHeight get() = resources.displayMetrics.heightPixels
+    private val permissionCheck = object : Runnable {
+        override fun run() {
+            if (!Settings.canDrawOverlays(this@FloatingCueService)) stopSelf()
+            else handler.postDelayed(this, 5000)
+        }
+    }
+    private val windowParams = WindowManager.LayoutParams().apply {
+        type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+        format = PixelFormat.TRANSLUCENT
+        gravity = Gravity.TOP or Gravity.START
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (!Settings.canDrawOverlays(this)) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        opacity = (intent?.getFloatExtra(AssistantControls.EXTRA_OPACITY, opacity) ?: opacity)
+            .coerceIn(0.35f, 1f)
+        panel = intent?.getBooleanExtra(AssistantControls.EXTRA_PANEL, panel) ?: panel
+        try {
+            startForeground(AssistantControls.FLOATING_ID,
+                AssistantControls.notification(this, withActions = panel, floating = true))
+        } catch (_: RuntimeException) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        if (centerY == 0) centerY = screenHeight / 2
+        if (root == null) showWindow() else root?.findViewWithTag<View>("bubble")?.alpha =
+            if (expanded) 1f else opacity
+        handler.removeCallbacks(permissionCheck)
+        handler.postDelayed(permissionCheck, 5000)
+        return START_NOT_STICKY
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        if (screenHeight < menuHeight + dp(76)) expanded = false
+        showWindow()
+    }
+
+    override fun onDestroy() {
+        handler.removeCallbacks(permissionCheck)
+        root?.let { runCatching { windows.removeViewImmediate(it) } }
+        root = null
+        super.onDestroy()
+    }
+
+    private fun showWindow() {
+        root?.let { runCatching { windows.removeViewImmediate(it) } }
+        root = null
+        if (!Settings.canDrawOverlays(this)) { stopSelf(); return }
+        val width = if (expanded) menuWidth else size
+        val height = if (expanded) menuHeight else size
+        val minimum = height / 2 + dp(28)
+        val maximum = screenHeight - height / 2 - dp(48)
+        centerY = if (maximum >= minimum) centerY.coerceIn(minimum, maximum) else screenHeight / 2
+        windowParams.width = width
+        windowParams.height = height
+        windowParams.x = if (expanded) {
+            if (rightEdge) screenWidth - width else 0
+        } else if (rightEdge) screenWidth - width + hidden else -hidden
+        windowParams.y = centerY - height / 2
+
+        val frame = FrameLayout(this)
+        if (expanded) addActions(frame)
+        val bubble = TextView(this).apply {
+            tag = "bubble"
+            text = "cue"
+            textSize = 18f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            contentDescription = "Floating Cue. Double tap for actions; drag to move."
+            setTextColor(Color.WHITE)
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(145, 118, 244), Color.rgb(76, 61, 155))).apply {
+                cornerRadius = dp(24).toFloat()
+                setStroke(dp(1), Color.rgb(206, 190, 255))
+            }
+            elevation = dp(12).toFloat()
+            alpha = if (expanded) 1f else opacity
+            setOnClickListener {
+                if (!expanded && screenHeight < menuHeight + dp(76)) {
+                    startActivity(AssistantControls.shortcutIntent(this@FloatingCueService,
+                        AssistantControls.OPEN_MENU))
+                } else {
+                    expanded = !expanded
+                    showWindow()
+                }
+            }
+        }
+        val bubbleX = if (expanded && rightEdge) width - size else 0
+        frame.addView(bubble, FrameLayout.LayoutParams(size, size).apply {
+            leftMargin = bubbleX
+            topMargin = if (expanded) (height - size) / 2 else 0
+        })
+        bubble.setOnTouchListener(object : View.OnTouchListener {
+            var downX = 0f
+            var downY = 0f
+            var startX = 0
+            var startY = 0
+            var dragged = false
+            override fun onTouch(view: View, event: MotionEvent): Boolean {
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        downX = event.rawX; downY = event.rawY
+                        startX = windowParams.x; startY = windowParams.y
+                        dragged = false
+                        return true
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        if (abs(event.rawX - downX) > dp(8) || abs(event.rawY - downY) > dp(8))
+                            dragged = true
+                        if (dragged && !expanded) {
+                            windowParams.x = (startX + (event.rawX - downX).toInt())
+                                .coerceIn(-hidden, screenWidth - size + hidden)
+                            windowParams.y = (startY + (event.rawY - downY).toInt())
+                                .coerceIn(dp(28), screenHeight - size - dp(48))
+                            windows.updateViewLayout(frame, windowParams)
+                        }
+                        return true
+                    }
+                    MotionEvent.ACTION_UP -> {
+                        if (dragged) {
+                            if (!expanded) {
+                                rightEdge = windowParams.x + size / 2 > screenWidth / 2
+                                centerY = windowParams.y + size / 2
+                                showWindow()
+                            }
+                        } else view.performClick()
+                        return true
+                    }
+                    MotionEvent.ACTION_CANCEL -> return true
+                }
+                return false
+            }
+        })
+        try {
+            windows.addView(frame, windowParams)
+            root = frame
+        } catch (_: RuntimeException) {
+            stopSelf()
+        }
+    }
+
+    private fun addActions(frame: FrameLayout) {
+        val offsets = intArrayOf(56, 78, 84, 84, 78, 56)
+        val tops = intArrayOf(12, 72, 132, 208, 268, 328)
+        CueAction.entries.forEachIndexed { index, action ->
+            val chip = TextView(this).apply {
+                text = "${action.symbol}   ${action.label}"
+                textSize = 14f
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(15), 0, dp(8), 0)
+                setTextColor(Color.rgb(248, 246, 255))
+                background = GradientDrawable().apply {
+                    setColor(Color.rgb(37, 34, 53))
+                    cornerRadius = dp(18).toFloat()
+                    setStroke(dp(1), Color.rgb(112, 92, 169))
+                }
+                elevation = dp(8).toFloat()
+                setOnClickListener {
+                    expanded = false
+                    showWindow()
+                    startActivity(AssistantControls.shortcutIntent(this@FloatingCueService, action.key))
+                }
+            }
+            val offset = dp(offsets[index])
+            frame.addView(chip, FrameLayout.LayoutParams(dp(175), dp(50)).apply {
+                leftMargin = if (rightEdge) menuWidth - dp(175) - offset else offset
+                topMargin = dp(tops[index])
+            })
+        }
+    }
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
+}

@@ -49,7 +49,9 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -58,6 +60,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -69,6 +72,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.rudrasinha.cue.data.CommitmentDao
+import com.rudrasinha.cue.assistant.AssistantControls
+import com.rudrasinha.cue.assistant.CueAction
+import com.rudrasinha.cue.assistant.FloatingCueService
 import com.rudrasinha.cue.data.CommitmentActions
 import com.rudrasinha.cue.data.CueDatabase
 import com.rudrasinha.cue.data.CloudCommitments
@@ -82,6 +88,7 @@ import com.rudrasinha.cue.ui.CueTheme
 import com.rudrasinha.cue.ui.CommitmentListScreen
 import com.rudrasinha.cue.ui.CaptureDraft
 import com.rudrasinha.cue.ui.CaptureHub
+import com.rudrasinha.cue.ui.AssistantActionSheet
 import com.rudrasinha.cue.ui.HistoryScreen
 import com.rudrasinha.cue.ui.themeSwatch
 import com.rudrasinha.cue.reminders.ReminderScheduler
@@ -96,24 +103,31 @@ import io.github.jan.supabase.auth.status.SessionStatus
 class MainActivity : ComponentActivity() {
     private var permissionEpoch by mutableIntStateOf(0)
     private var captureDraft by mutableStateOf<CaptureDraft?>(null)
+    private var shortcutAction by mutableStateOf<String?>(null)
 
     fun queueCapture(draft: CaptureDraft) { captureDraft = draft }
+    private fun consumeShortcut() {
+        shortcutAction = null
+        intent?.removeExtra(AssistantControls.EXTRA_ACTION)
+    }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         sharedText(intent)?.let(::queueCapture)
+        shortcutAction = intent.getStringExtra(AssistantControls.EXTRA_ACTION)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         captureDraft = sharedText(intent)
+        shortcutAction = intent?.getStringExtra(AssistantControls.EXTRA_ACTION)
         val themeStore = ThemeStore(applicationContext)
         val database = CueDatabase.get(applicationContext)
         val auth = CueAuth(applicationContext)
         val cloud = CloudCommitments(database, auth.client)
         setContent { CueApp(themeStore, database, auth, cloud, this, permissionEpoch,
-            captureDraft, { captureDraft = null }) }
+            captureDraft, { captureDraft = null }, shortcutAction, ::consumeShortcut) }
     }
 
     override fun onResume() {
@@ -140,11 +154,16 @@ private fun CueApp(
     activity: Activity,
     permissionEpoch: Int,
     captureDraft: CaptureDraft?,
-    onCaptureDismiss: () -> Unit
+    onCaptureDismiss: () -> Unit,
+    shortcutAction: String?,
+    onShortcutConsumed: () -> Unit
 ) {
     val commitments = database.commitments()
     val theme by themeStore.mode.collectAsState(initial = ThemePreference.SYSTEM)
     val colorTheme by themeStore.colorTheme.collectAsState(initial = ColorTheme.DEFAULT)
+    val floatingEnabled by themeStore.floatingCue.collectAsState(initial = false)
+    val panelEnabled by themeStore.notificationPanel.collectAsState(initial = false)
+    val floatingOpacity by themeStore.floatingOpacity.collectAsState(initial = 0.82f)
     val session by auth.client.auth.sessionStatus.collectAsState(initial = SessionStatus.Initializing)
     val userId = (session as? SessionStatus.Authenticated)?.session?.user?.id
     val ownerId = userId ?: "guest"
@@ -157,6 +176,11 @@ private fun CueApp(
     val actions = remember { CommitmentActions(database, scheduler, cloud) }
     val scope = rememberCoroutineScope()
     var selected by rememberSaveable { mutableStateOf(Tab.TODAY) }
+    var todayFocusToken by remember { mutableIntStateOf(0) }
+    var actionSheetOpen by remember { mutableStateOf(false) }
+    var controlMessage by remember { mutableStateOf<String?>(null) }
+    var pendingOverlayEnable by remember { mutableStateOf(false) }
+    var pendingPanelEnable by remember { mutableStateOf(false) }
     LaunchedEffect(captureDraft?.id) { if (captureDraft != null) selected = Tab.TODAY }
     var accountMessage by remember { mutableStateOf<String?>(null) }
     var accountBusy by remember { mutableStateOf(false) }
@@ -197,6 +221,77 @@ private fun CueApp(
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         notificationAllowed = granted && notificationsEnabled()
         if (!granted) reminderMessage = "Allow notifications in Android settings to see alerts."
+        if (pendingPanelEnable) {
+            pendingPanelEnable = false
+            if (granted && AssistantControls.canPost(activity)) {
+                scope.launch { themeStore.setNotificationPanel(true) }
+            } else controlMessage = "Allow Cue notifications to show the shortcut panel."
+        }
+    }
+
+    LaunchedEffect(permissionEpoch, floatingEnabled, panelEnabled) {
+        if (pendingOverlayEnable && Settings.canDrawOverlays(activity)) {
+            pendingOverlayEnable = false
+            themeStore.setFloatingCue(true)
+        }
+        if (pendingPanelEnable && AssistantControls.canPost(activity)) {
+            pendingPanelEnable = false
+            themeStore.setNotificationPanel(true)
+        }
+        if (floatingEnabled && !Settings.canDrawOverlays(activity)) {
+            themeStore.setFloatingCue(false)
+            controlMessage = "Floating Cue stopped because its display permission is off."
+        }
+        if (panelEnabled && !AssistantControls.canPost(activity)) {
+            themeStore.setNotificationPanel(false)
+            controlMessage = "Notification shortcuts stopped because notifications are off."
+        }
+    }
+
+    LaunchedEffect(userId, floatingEnabled, panelEnabled, floatingOpacity, permissionEpoch) {
+        val floatingActive = userId != null && floatingEnabled && Settings.canDrawOverlays(activity)
+        if (floatingActive) {
+            try {
+                activity.startForegroundService(Intent(activity, FloatingCueService::class.java).apply {
+                    putExtra(AssistantControls.EXTRA_OPACITY, floatingOpacity)
+                    putExtra(AssistantControls.EXTRA_PANEL, panelEnabled)
+                })
+            } catch (e: RuntimeException) {
+                controlMessage = e.message ?: "Could not start floating Cue."
+                themeStore.setFloatingCue(false)
+            }
+        } else activity.stopService(Intent(activity, FloatingCueService::class.java))
+        AssistantControls.updatePanel(activity, panelEnabled, floatingActive)
+    }
+
+    fun dispatchShortcut(action: CueAction) {
+        when (action) {
+            CueAction.VOICE -> try {
+                voiceLauncher.launch(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                        RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                    putExtra(RecognizerIntent.EXTRA_PROMPT, "What would you like to remember?")
+                })
+            } catch (_: android.content.ActivityNotFoundException) {
+                selected = Tab.AI
+                reminderMessage = "Speech recognition isn't available. Use Quick reminder instead."
+            }
+            CueAction.QUICK -> (activity as MainActivity).queueCapture(
+                CaptureDraft(UUID.randomUUID().toString(), "", CaptureOrigin("manual")))
+            CueAction.IMPORT -> documentLauncher.launch(arrayOf("text/plain", "text/csv",
+                "text/tab-separated-values", "text/markdown", "application/pdf", "image/jpeg",
+                "image/png", "image/webp",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"))
+            CueAction.ASK -> selected = Tab.AI
+            CueAction.DAY -> { selected = Tab.TODAY; todayFocusToken++ }
+            CueAction.SETTINGS -> selected = Tab.YOU
+        }
+    }
+    LaunchedEffect(shortcutAction) {
+        val key = shortcutAction ?: return@LaunchedEffect
+        onShortcutConsumed()
+        if (key == AssistantControls.OPEN_MENU) actionSheetOpen = true
+        else CueAction.from(key)?.let(::dispatchShortcut)
     }
 
     fun perform(success: String, action: suspend () -> Boolean) {
@@ -304,27 +399,13 @@ private fun CueApp(
                         }
                     },
                     { selected = Tab.YOU },
-                    captureDraft, onCaptureDismiss,
+                    captureDraft, onCaptureDismiss, todayFocusToken,
                     Modifier.padding(padding)
                 )
-                Tab.AI -> CaptureHub(onVoice = {
-                    try {
-                        voiceLauncher.launch(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                            putExtra(RecognizerIntent.EXTRA_PROMPT, "What would you like to remember?")
-                        })
-                    } catch (_: android.content.ActivityNotFoundException) {
-                        reminderMessage = "Speech recognition isn't available on this device."
-                    }
-                }, onDocument = {
-                    documentLauncher.launch(arrayOf("text/plain", "text/csv", "text/tab-separated-values",
-                        "text/markdown", "application/pdf", "image/jpeg", "image/png", "image/webp",
-                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"))
-                }, onQuick = {
-                    (activity as MainActivity).queueCapture(CaptureDraft(UUID.randomUUID().toString(), "",
-                        CaptureOrigin("manual")))
-                }, message = reminderMessage, modifier = Modifier.padding(padding))
+                Tab.AI -> CaptureHub(onVoice = { dispatchShortcut(CueAction.VOICE) },
+                    onDocument = { dispatchShortcut(CueAction.IMPORT) },
+                    onQuick = { dispatchShortcut(CueAction.QUICK) },
+                    message = reminderMessage, modifier = Modifier.padding(padding))
                 Tab.INBOX -> HistoryScreen(history, sources, batches, onOpenSource = { value ->
                     runCatching {
                         val uri = Uri.parse(value)
@@ -352,6 +433,8 @@ private fun CueApp(
                         scope.launch {
                             accountBusy = true
                             try {
+                                activity.stopService(Intent(activity, FloatingCueService::class.java))
+                                themeStore.setFloatingCue(false)
                                 auth.signOut()
                                 userId?.let {
                                     scheduler.cancelOwner(it)
@@ -363,9 +446,37 @@ private fun CueApp(
                             finally { accountBusy = false }
                         }
                     },
+                    floatingEnabled, panelEnabled, floatingOpacity,
+                    Settings.canDrawOverlays(activity), controlMessage,
+                    { enable ->
+                        if (!enable) scope.launch { themeStore.setFloatingCue(false) }
+                        else if (!Settings.canDrawOverlays(activity)) {
+                            pendingOverlayEnable = true
+                            activity.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                Uri.parse("package:${activity.packageName}")))
+                        } else scope.launch { themeStore.setFloatingCue(true) }
+                    },
+                    { enable ->
+                        if (!enable) scope.launch { themeStore.setNotificationPanel(false) }
+                        else if (!AssistantControls.canPost(activity)) {
+                            pendingPanelEnable = true
+                            if (Build.VERSION.SDK_INT >= 33 &&
+                                activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+                                PackageManager.PERMISSION_GRANTED) {
+                                notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            } else activity.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                putExtra(Settings.EXTRA_APP_PACKAGE, activity.packageName)
+                            })
+                        } else scope.launch { themeStore.setNotificationPanel(true) }
+                    },
+                    { value -> scope.launch { themeStore.setFloatingOpacity(value) } },
                     padding
                 )
             }
+        }
+        if (actionSheetOpen) AssistantActionSheet(onDismiss = { actionSheetOpen = false }) { action ->
+            actionSheetOpen = false
+            dispatchShortcut(action)
         }
     }
 }
@@ -399,6 +510,14 @@ private fun YouScreen(
     accountMessage: String?,
     onSignIn: () -> Unit,
     onSignOut: () -> Unit,
+    floatingEnabled: Boolean,
+    panelEnabled: Boolean,
+    floatingOpacity: Float,
+    overlayAllowed: Boolean,
+    controlMessage: String?,
+    onFloating: (Boolean) -> Unit,
+    onPanel: (Boolean) -> Unit,
+    onOpacity: (Float) -> Unit,
     padding: PaddingValues
 ) {
     Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(24.dp)) {
@@ -430,6 +549,58 @@ private fun YouScreen(
                     }
                 }
                 accountMessage?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
+            }
+        }
+        Spacer(Modifier.height(32.dp))
+        Text("Cue controls", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(8.dp))
+        Text("Bring your six shortcuts to other apps or your notification panel.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(16.dp))
+        Card(shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+            Column(Modifier.fillMaxWidth().padding(20.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Floating Cue", fontWeight = FontWeight.SemiBold)
+                        Text(if (signedIn) "Drag it to an edge and tap for six actions."
+                            else "Sign in to enable floating Cue.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(checked = signedIn && floatingEnabled,
+                        enabled = signedIn && !accountBusy,
+                        onCheckedChange = onFloating)
+                }
+                if (signedIn && !overlayAllowed && !floatingEnabled) Text(
+                    "Android will ask for ‘Display over other apps’ when you switch this on.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (signedIn && floatingEnabled) {
+                    var draftOpacity by remember { mutableFloatStateOf(floatingOpacity) }
+                    LaunchedEffect(floatingOpacity) { draftOpacity = floatingOpacity }
+                    Text("Collapsed opacity · ${(draftOpacity * 100).toInt()}%",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 15.dp))
+                    Slider(value = draftOpacity, onValueChange = { draftOpacity = it },
+                        onValueChangeFinished = { onOpacity(draftOpacity) },
+                        valueRange = 0.35f..1f)
+                }
+                androidx.compose.material3.HorizontalDivider(Modifier.padding(vertical = 14.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Notification shortcuts", fontWeight = FontWeight.SemiBold)
+                        Text("Voice and Quick actions, plus a menu with all six.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(checked = panelEnabled, onCheckedChange = onPanel)
+                }
+                controlMessage?.let { Text(it, color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 12.dp)) }
             }
         }
         Spacer(Modifier.height(32.dp))

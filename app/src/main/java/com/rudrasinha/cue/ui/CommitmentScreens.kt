@@ -78,6 +78,7 @@ fun CommitmentListScreen(
     onDelete: (String) -> Unit,
     signedIn: Boolean, onSync: () -> Unit, onSettings: () -> Unit,
     externalDraft: CaptureDraft?, onCaptureDismiss: () -> Unit,
+    focusTodayToken: Int = 0,
     modifier: Modifier = Modifier
 ) {
     var selectedView by remember { mutableStateOf(ReminderView.ALL) }
@@ -94,6 +95,13 @@ fun CommitmentListScreen(
     var draftOrigin by remember { mutableStateOf(CaptureOrigin("manual")) }
     var draftId by remember { mutableStateOf("") }
     var editorOpen by remember { mutableStateOf(false) }
+    LaunchedEffect(focusTodayToken) {
+        if (focusTodayToken > 0) {
+            selectedView = ReminderView.TODAY
+            selectedDate = LocalDate.now()
+            visibleMonth = YearMonth.now()
+        }
+    }
     val today = LocalDate.now()
     val now = System.currentTimeMillis()
     fun dateOf(item: CommitmentEntity): LocalDate? = item.dueAtMillis?.let {

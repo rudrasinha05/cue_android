@@ -21,6 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.rudrasinha.cue.data.ReminderEventEntity
+import com.rudrasinha.cue.assistant.CueAction
 import com.rudrasinha.cue.data.SourceEntity
 import com.rudrasinha.cue.data.HistoryArchive
 import com.rudrasinha.cue.data.HistoryBatchEntity
@@ -35,6 +36,42 @@ private val pale = Color(0xFFF8F6FF)
 private val subdued = Color(0xFFADA9BA)
 private val panel = Color(0xFF20202A)
 private val dateFormat = DateTimeFormatter.ofPattern("d MMM yyyy · h:mm a")
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AssistantActionSheet(onDismiss: () -> Unit, onAction: (CueAction) -> Unit) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = night,
+        contentColor = pale, dragHandle = { BottomSheetDefaults.DragHandle(color = subdued) }) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp)) {
+            Text("Cue at your fingertips", style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold, color = pale)
+            Text("Choose what you want to do.", color = subdued,
+                modifier = Modifier.padding(top = 6.dp, bottom = 20.dp))
+            CueAction.entries.forEach { action ->
+                val icon = when (action) {
+                    CueAction.VOICE -> Icons.Filled.Mic
+                    CueAction.QUICK -> Icons.Filled.EditNote
+                    CueAction.IMPORT -> Icons.Filled.DocumentScanner
+                    CueAction.ASK -> Icons.Filled.AutoAwesome
+                    CueAction.DAY -> Icons.Filled.Today
+                    CueAction.SETTINGS -> Icons.Filled.Tune
+                }
+                Surface(onClick = { onAction(action) }, shape = RoundedCornerShape(20.dp),
+                    color = panel, modifier = Modifier.fillMaxWidth().padding(bottom = 9.dp)) {
+                    Row(Modifier.padding(horizontal = 17.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Icon(icon, contentDescription = null, tint = purple,
+                            modifier = Modifier.size(25.dp))
+                        Text(action.label, modifier = Modifier.weight(1f).padding(start = 16.dp),
+                            color = pale, fontWeight = FontWeight.SemiBold)
+                        Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = subdued)
+                    }
+                }
+            }
+            Spacer(Modifier.height(18.dp))
+        }
+    }
+}
 
 @Composable
 fun CaptureHub(onVoice: () -> Unit, onDocument: () -> Unit, onQuick: () -> Unit,
