@@ -85,6 +85,7 @@ import com.rudrasinha.cue.data.CloudCommitments
 import com.rudrasinha.cue.data.CaptureOrigin
 import com.rudrasinha.cue.data.HistoryArchive
 import com.rudrasinha.cue.auth.CueAuth
+import com.rudrasinha.cue.auth.signInErrorMessage
 import com.rudrasinha.cue.settings.ThemePreference
 import com.rudrasinha.cue.settings.ColorTheme
 import com.rudrasinha.cue.settings.ThemeStore
@@ -523,7 +524,7 @@ private fun CueApp(
                             accountBusy = true
                             accountMessage = null
                             try { auth.signIn(activity) }
-                            catch (e: Exception) { accountMessage = e.message ?: "Sign-in failed." }
+                            catch (e: Exception) { accountMessage = signInErrorMessage(e) }
                             finally { accountBusy = false }
                         }
                     },

@@ -7,6 +7,8 @@ import androidx.credentials.ClearCredentialStateRequest
 import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
+import androidx.credentials.exceptions.GetCredentialCancellationException
+import androidx.credentials.exceptions.GetCredentialException
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.rudrasinha.cue.BuildConfig
@@ -53,5 +55,18 @@ class CueAuth(context: Context) {
     suspend fun signOut() {
         client.auth.signOut()
         credentials.clearCredentialState(ClearCredentialStateRequest())
+    }
+}
+
+/** Give an actionable account recovery step without exposing provider error codes in the UI. */
+fun signInErrorMessage(error: Exception): String {
+    val detail = error.message.orEmpty()
+    return when {
+        detail.contains("Account reauth failed", ignoreCase = true) ->
+            "Google needs you to sign in to this account again on your device. Open Android Settings → Accounts, complete any Google account action, then retry Cue."
+        error is GetCredentialCancellationException -> "Google sign-in was cancelled. Tap Continue with Google to try again."
+        error is GetCredentialException ->
+            "Google could not open this account. Check the account in Android Settings and update Google Play services, then retry."
+        else -> detail.ifBlank { "Could not sign in. Check your connection and try again." }
     }
 }
