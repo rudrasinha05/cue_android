@@ -39,6 +39,17 @@ internal fun actionableReminder(line: String): Boolean = Regex(
         "exam|flight|train|doctor|dentist|bill|class|event|webinar|follow up)\\b",
     RegexOption.IGNORE_CASE).containsMatchIn(line)
 
+/** A model annotation must contain the date and clock time together, not separate UI fragments. */
+internal fun explicitDateTimeSpan(span: String): Boolean {
+    val date = Regex("\\b(today|tomorrow|mon(day)?|tue(sday)?|wed(nesday)?|" +
+        "thu(rsday)?|fri(day)?|sat(urday)?|sun(day)?|jan(uary)?|feb(ruary)?|mar(ch)?|" +
+        "apr(il)?|may|jun(e)?|jul(y)?|aug(ust)?|sep(tember)?|oct(ober)?|" +
+        "nov(ember)?|dec(ember)?|[0-3]?\\d[/.-][01]?\\d)\\b", RegexOption.IGNORE_CASE)
+    val time = Regex("\\b(1[0-2]|0?[1-9])(?::[0-5]\\d)?\\s*(am|pm)\\b|" +
+        "\\b([01]?\\d|2[0-3]):[0-5]\\d\\b", RegexOption.IGNORE_CASE)
+    return date.containsMatchIn(span) && time.containsMatchIn(span)
+}
+
 /** Require the date and time on one line, so OCR does not combine unrelated screen content. */
 internal fun confidentReminder(text: String, clock: Clock = Clock.systemDefaultZone()): ConfidentReminder? {
     val candidates = text.lineSequence().map(String::trim).filter(String::isNotBlank)

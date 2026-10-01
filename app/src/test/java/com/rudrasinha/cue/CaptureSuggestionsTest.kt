@@ -39,4 +39,10 @@ class CaptureSuggestionsTest {
         assertEquals("Call mom tomorrow at 9 pm",
             confidentReminder("Call mom tomorrow at 9 pm", clock)?.title)
     }
+
+    @Test fun modelCannotUseAStandaloneTimeAsAFutureEvent() {
+        org.junit.Assert.assertFalse(explicitDateTimeSpan("at 9 pm"))
+        org.junit.Assert.assertFalse(explicitDateTimeSpan("October 3"))
+        org.junit.Assert.assertTrue(explicitDateTimeSpan("Oct 3 at 9 pm"))
+    }
 }

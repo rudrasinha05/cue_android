@@ -261,21 +261,18 @@ private fun CueApp(
             }
         }
     }
-    fun notificationsEnabled(): Boolean {
+    fun channelNotificationsEnabled(id: String): Boolean {
         val manager = activity.getSystemService(NotificationManager::class.java)
         val granted = Build.VERSION.SDK_INT < 33 ||
             activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
-        val channel = manager.getNotificationChannel("cue_reminders")
+        val channel = manager.getNotificationChannel(id)
         return granted && manager.areNotificationsEnabled() &&
             channel?.importance != NotificationManager.IMPORTANCE_NONE
     }
-    fun captureNotificationsEnabled(): Boolean {
-        val manager = activity.getSystemService(NotificationManager::class.java)
-        return (Build.VERSION.SDK_INT < 33 ||
-            activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) &&
-            manager.areNotificationsEnabled() &&
-            manager.getNotificationChannel("cue_capture")?.importance != NotificationManager.IMPORTANCE_NONE
-    }
+    fun notificationsEnabled() = channelNotificationsEnabled("cue_reminders")
+    fun captureNotificationsEnabled() = channelNotificationsEnabled("cue_capture")
+    fun dayNotificationsEnabled() = channelNotificationsEnabled("cue_day_plan")
+    fun screenNotificationsEnabled() = channelNotificationsEnabled("cue_screen")
     var notificationAllowed by remember { mutableStateOf(notificationsEnabled()) }
     LaunchedEffect(permissionEpoch) { notificationAllowed = notificationsEnabled() }
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -299,7 +296,7 @@ private fun CueApp(
         }
         if (pendingDayEnable) {
             pendingDayEnable = false
-            if (granted && notificationsEnabled()) scope.launch {
+            if (granted && dayNotificationsEnabled()) scope.launch {
                 themeStore.setDailyPlanEnabled(true)
                 DailyPlanScheduler(activity).notifyToday()
             }
@@ -307,7 +304,7 @@ private fun CueApp(
         }
         if (pendingScreenStart) {
             pendingScreenStart = false
-            if (granted && Build.VERSION.SDK_INT >= 34) {
+            if (granted && Build.VERSION.SDK_INT >= 34 && screenNotificationsEnabled()) {
                 projectionLauncher.launch(activity.getSystemService(MediaProjectionManager::class.java)
                     .createScreenCaptureIntent())
             } else controlMessage = "Notifications are needed for visible screen analysis controls."
@@ -590,7 +587,7 @@ private fun CueApp(
                             PackageManager.PERMISSION_GRANTED) {
                             pendingDayEnable = true
                             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-                        } else if (!notificationsEnabled()) activity.startActivity(
+                        } else if (!dayNotificationsEnabled()) activity.startActivity(
                             Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
                                 putExtra(Settings.EXTRA_APP_PACKAGE, activity.packageName)
                             })
@@ -615,6 +612,10 @@ private fun CueApp(
                             PackageManager.PERMISSION_GRANTED) {
                             pendingScreenStart = true
                             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        } else if (!screenNotificationsEnabled()) activity.startActivity(
+                            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                putExtra(Settings.EXTRA_APP_PACKAGE, activity.packageName)
+                            })
                         } else projectionLauncher.launch(
                             activity.getSystemService(MediaProjectionManager::class.java)
                                 .createScreenCaptureIntent())

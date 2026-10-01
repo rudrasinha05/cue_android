@@ -49,7 +49,8 @@ internal object LocalReminderInterpreter {
                         .setPreferredLocale(Locale.US).build()
                     val annotations = try { Tasks.await(extractor.annotate(params)) }
                         catch (_: Exception) { return@withLock null }
-                    val dates = annotations.flatMap { it.entities }.filter { it.type == Entity.TYPE_DATE_TIME }
+                    val dates = annotations.filter { explicitDateTimeSpan(it.annotatedText) }
+                        .flatMap { it.entities }.filter { it.type == Entity.TYPE_DATE_TIME }
                         .mapNotNull { it.asDateTimeEntity() }
                         .filter { it.dateTimeGranularity >= DateTimeEntity.GRANULARITY_HOUR &&
                             it.timestampMillis > System.currentTimeMillis() }

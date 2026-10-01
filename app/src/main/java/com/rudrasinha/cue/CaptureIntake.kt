@@ -38,7 +38,7 @@ class CaptureIntake(private val context: Context) {
             acknowledge("Review a possible reminder", title,
                 Intent(context, MainActivity::class.java).apply {
                     action = Intent.ACTION_SEND
-                    type = "text/plain"
+                    this.type = "text/plain"
                     putExtra(Intent.EXTRA_TEXT, content)
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or
                         Intent.FLAG_ACTIVITY_SINGLE_TOP
