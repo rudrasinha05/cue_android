@@ -587,11 +587,11 @@ private fun CueApp(
                             PackageManager.PERMISSION_GRANTED) {
                             pendingDayEnable = true
                             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-                        } else if (!dayNotificationsEnabled()) activity.startActivity(
-                            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                        } else if (!dayNotificationsEnabled()) {
+                            activity.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
                                 putExtra(Settings.EXTRA_APP_PACKAGE, activity.packageName)
                             })
-                        else scope.launch {
+                        } else scope.launch {
                             themeStore.setDailyPlanEnabled(true)
                             DailyPlanScheduler(activity).notifyToday()
                         }
@@ -612,8 +612,8 @@ private fun CueApp(
                             PackageManager.PERMISSION_GRANTED) {
                             pendingScreenStart = true
                             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-                        } else if (!screenNotificationsEnabled()) activity.startActivity(
-                            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                        } else if (!screenNotificationsEnabled()) {
+                            activity.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
                                 putExtra(Settings.EXTRA_APP_PACKAGE, activity.packageName)
                             })
                         } else projectionLauncher.launch(
