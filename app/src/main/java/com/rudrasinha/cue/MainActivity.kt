@@ -216,6 +216,7 @@ private fun CueApp(
     var dayPlanOpen by remember { mutableStateOf(false) }
     var controlMessage by remember { mutableStateOf<String?>(null) }
     var pendingOverlayEnable by remember { mutableStateOf(false) }
+    var pendingFloatingEnable by remember { mutableStateOf(false) }
     var pendingPanelEnable by remember { mutableStateOf(false) }
     var pendingDayEnable by remember { mutableStateOf(false) }
     var pendingScreenStart by remember { mutableStateOf(false) }
@@ -268,6 +269,13 @@ private fun CueApp(
         return granted && manager.areNotificationsEnabled() &&
             channel?.importance != NotificationManager.IMPORTANCE_NONE
     }
+    fun captureNotificationsEnabled(): Boolean {
+        val manager = activity.getSystemService(NotificationManager::class.java)
+        return (Build.VERSION.SDK_INT < 33 ||
+            activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) &&
+            manager.areNotificationsEnabled() &&
+            manager.getNotificationChannel("cue_capture")?.importance != NotificationManager.IMPORTANCE_NONE
+    }
     var notificationAllowed by remember { mutableStateOf(notificationsEnabled()) }
     LaunchedEffect(permissionEpoch) { notificationAllowed = notificationsEnabled() }
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -278,6 +286,16 @@ private fun CueApp(
             if (granted && AssistantControls.canPost(activity)) {
                 scope.launch { themeStore.setNotificationPanel(true) }
             } else controlMessage = "Allow Cue notifications to show the shortcut panel."
+        }
+        if (pendingFloatingEnable) {
+            pendingFloatingEnable = false
+            if (granted && captureNotificationsEnabled()) {
+                if (!Settings.canDrawOverlays(activity)) {
+                    pendingOverlayEnable = true
+                    activity.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:${activity.packageName}")))
+                } else scope.launch { themeStore.setFloatingCue(true) }
+            } else controlMessage = "Allow Cue notifications for drop results."
         }
         if (pendingDayEnable) {
             pendingDayEnable = false
@@ -297,6 +315,14 @@ private fun CueApp(
     }
 
     LaunchedEffect(permissionEpoch, floatingEnabled, panelEnabled) {
+        if (pendingFloatingEnable && captureNotificationsEnabled()) {
+            pendingFloatingEnable = false
+            if (!Settings.canDrawOverlays(activity)) {
+                pendingOverlayEnable = true
+                activity.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:${activity.packageName}")))
+            } else themeStore.setFloatingCue(true)
+        }
         if (pendingOverlayEnable && Settings.canDrawOverlays(activity)) {
             pendingOverlayEnable = false
             themeStore.setFloatingCue(true)
@@ -526,6 +552,16 @@ private fun CueApp(
                     Settings.canDrawOverlays(activity), controlMessage,
                     { enable ->
                         if (!enable) scope.launch { themeStore.setFloatingCue(false) }
+                        else if (!captureNotificationsEnabled()) {
+                            pendingFloatingEnable = true
+                            if (Build.VERSION.SDK_INT >= 33 &&
+                                activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+                                PackageManager.PERMISSION_GRANTED)
+                                notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            else activity.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                putExtra(Settings.EXTRA_APP_PACKAGE, activity.packageName)
+                            })
+                        }
                         else if (!Settings.canDrawOverlays(activity)) {
                             pendingOverlayEnable = true
                             activity.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
@@ -558,7 +594,7 @@ private fun CueApp(
                             Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
                                 putExtra(Settings.EXTRA_APP_PACKAGE, activity.packageName)
                             })
-                        } else scope.launch {
+                        else scope.launch {
                             themeStore.setDailyPlanEnabled(true)
                             DailyPlanScheduler(activity).notifyToday()
                         }
@@ -686,7 +722,7 @@ private fun YouScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Floating Cue", fontWeight = FontWeight.SemiBold)
-                        Text(if (signedIn) "Drag it to an edge and tap for six actions."
+                        Text(if (signedIn) "Drag text or an image onto the bubble; results appear in notifications."
                             else "Sign in to enable floating Cue.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
