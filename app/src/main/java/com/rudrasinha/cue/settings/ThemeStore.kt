@@ -34,6 +34,7 @@ class ThemeStore(private val context: Context) {
     private val dayPlanKey = booleanPreferencesKey("daily_plan_enabled")
     private val wakeKey = intPreferencesKey("wake_minute")
     private val bedKey = intPreferencesKey("bed_minute")
+    private val reminderToneKey = stringPreferencesKey("reminder_tone")
     val mode: Flow<ThemePreference> = context.cuePreferences.data.map { preferences ->
         ThemePreference.entries.firstOrNull { it.name == preferences[themeKey] } ?: ThemePreference.SYSTEM
     }
@@ -48,6 +49,9 @@ class ThemeStore(private val context: Context) {
     val dailyPlanEnabled: Flow<Boolean> = context.cuePreferences.data.map { it[dayPlanKey] ?: false }
     val wakeMinute: Flow<Int> = context.cuePreferences.data.map { (it[wakeKey] ?: 420).coerceIn(0, 1080) }
     val bedMinute: Flow<Int> = context.cuePreferences.data.map { (it[bedKey] ?: 1320).coerceIn(480, 1439) }
+    val reminderTone: Flow<String> = context.cuePreferences.data.map {
+        it[reminderToneKey] ?: "default"
+    }
 
     suspend fun set(value: ThemePreference) {
         context.cuePreferences.edit { it[themeKey] = value.name }
@@ -76,5 +80,9 @@ class ThemeStore(private val context: Context) {
     suspend fun setDayHours(wake: Int, bed: Int) {
         require(wake in 0..1080 && bed in 480..1439 && bed - wake >= 360)
         context.cuePreferences.edit { it[wakeKey] = wake; it[bedKey] = bed }
+    }
+
+    suspend fun setReminderTone(id: String) {
+        context.cuePreferences.edit { it[reminderToneKey] = id }
     }
 }

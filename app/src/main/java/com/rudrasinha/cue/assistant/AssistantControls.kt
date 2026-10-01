@@ -75,6 +75,14 @@ object AssistantControls {
             .setOngoing(true)
             .setShowWhen(false)
             .setCategory(Notification.CATEGORY_SERVICE)
+        if (floating) builder
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
+            .setPublicVersion(Notification.Builder(context, CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_cue_foreground)
+                .setContentTitle("Floating Cue is on")
+                .setContentText("Unlock to use Cue")
+                .setContentIntent(shortcut(context, OPEN_MENU, 100))
+                .build())
         if (withActions) builder
             .addAction(android.R.drawable.ic_btn_speak_now, "Voice", shortcut(context, CueAction.VOICE.key, 101))
             .addAction(android.R.drawable.ic_menu_edit, "Quick", shortcut(context, CueAction.QUICK.key, 102))

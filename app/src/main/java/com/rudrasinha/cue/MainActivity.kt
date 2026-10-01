@@ -97,6 +97,8 @@ import com.rudrasinha.cue.ui.AssistantActionSheet
 import com.rudrasinha.cue.ui.HistoryScreen
 import com.rudrasinha.cue.ui.themeSwatch
 import com.rudrasinha.cue.reminders.ReminderScheduler
+import com.rudrasinha.cue.reminders.ReminderTones
+import com.rudrasinha.cue.ui.ReminderTonePicker
 import com.rudrasinha.cue.planning.DailyPlanScheduler
 import com.rudrasinha.cue.ui.DailyPlanSheet
 import com.rudrasinha.cue.ui.timeLabel
@@ -193,7 +195,9 @@ private fun CueApp(
     val commitments = database.commitments()
     val theme by themeStore.mode.collectAsState(initial = ThemePreference.SYSTEM)
     val colorTheme by themeStore.colorTheme.collectAsState(initial = ColorTheme.DEFAULT)
-    val floatingEnabled by themeStore.floatingCue.collectAsState(initial = false)
+    val floatingPreference by themeStore.floatingCue.collectAsState(initial = null)
+    val floatingEnabled = floatingPreference == true
+    val reminderTone by themeStore.reminderTone.collectAsState(initial = ReminderTones.DEFAULT)
     val panelEnabled by themeStore.notificationPanel.collectAsState(initial = false)
     val floatingOpacity by themeStore.floatingOpacity.collectAsState(initial = 0.82f)
     val screenRunning by ScreenInsightService.running.collectAsState()
@@ -270,12 +274,12 @@ private fun CueApp(
         return granted && manager.areNotificationsEnabled() &&
             channel?.importance != NotificationManager.IMPORTANCE_NONE
     }
-    fun notificationsEnabled() = channelNotificationsEnabled("cue_reminders")
+    fun notificationsEnabled() = channelNotificationsEnabled(ReminderTones.channelId(reminderTone))
     fun captureNotificationsEnabled() = channelNotificationsEnabled("cue_capture")
     fun dayNotificationsEnabled() = channelNotificationsEnabled("cue_day_plan")
     fun screenNotificationsEnabled() = channelNotificationsEnabled("cue_screen")
     var notificationAllowed by remember { mutableStateOf(notificationsEnabled()) }
-    LaunchedEffect(permissionEpoch) { notificationAllowed = notificationsEnabled() }
+    LaunchedEffect(permissionEpoch, reminderTone) { notificationAllowed = notificationsEnabled() }
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         notificationAllowed = granted && notificationsEnabled()
         if (!granted) reminderMessage = "Allow notifications in Android settings to see alerts."
@@ -405,6 +409,7 @@ private fun CueApp(
         val colors = MaterialTheme.colorScheme
         LaunchedEffect(userId, floatingEnabled, panelEnabled, floatingOpacity, permissionEpoch,
             colors.primary, colors.onPrimary, colors.surface, colors.onSurface) {
+            if (floatingPreference == null || session is SessionStatus.Initializing) return@LaunchedEffect
             val floatingActive = userId != null && floatingEnabled && Settings.canDrawOverlays(activity)
             if (floatingActive) {
                 try {
@@ -580,6 +585,12 @@ private fun CueApp(
                         } else scope.launch { themeStore.setNotificationPanel(true) }
                     },
                     { value -> scope.launch { themeStore.setFloatingOpacity(value) } },
+                    reminderTone, { tone ->
+                        scope.launch {
+                            ReminderTones.ensureChannel(activity, tone)
+                            themeStore.setReminderTone(tone)
+                        }
+                    },
                     dailyPlanEnabled, wakeMinute, bedMinute,
                     { enable ->
                         if (!enable) scope.launch { themeStore.setDailyPlanEnabled(false) }
@@ -670,6 +681,8 @@ private fun YouScreen(
     onFloating: (Boolean) -> Unit,
     onPanel: (Boolean) -> Unit,
     onOpacity: (Float) -> Unit,
+    reminderTone: String,
+    onReminderTone: (String) -> Unit,
     dailyPlanEnabled: Boolean,
     wakeMinute: Int,
     bedMinute: Int,
@@ -763,6 +776,8 @@ private fun YouScreen(
                     modifier = Modifier.padding(top = 12.dp)) }
             }
         }
+        Spacer(Modifier.height(32.dp))
+        ReminderTonePicker(reminderTone, onReminderTone)
         Spacer(Modifier.height(32.dp))
         Text("Daily schedule", style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.SemiBold)

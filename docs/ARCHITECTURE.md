@@ -63,3 +63,9 @@ The canonical entities are `Commitment`, `Occurrence`, `ReminderChain`, `Alert`,
 6. Permission revocation degrades the relevant feature and leaves existing local reminders intact.
 7. UI surfaces never write alarm/database state independently of the shared domain use cases.
 8. Every reminder retains a traceable source and reconstructable change history. Compaction cannot silently lose events or change the active reminder schedule.
+
+### Reminder sounds and floating Cue
+
+The You screen offers the system default and 20 bundled OGG notification sounds. The chosen sound is stored in DataStore; the alarm receiver reads it when each reminder fires. Android notification-channel sounds cannot be changed once created, so Cue creates a stable channel for each sound when selected. Android notification settings may override or silence any channel.
+
+Floating Cue runs as an opt-in foreground service with a persistent notification. It stores bubble position and appearance and requests a sticky restart after a process kill, then checks saved opt-in and signed-in owner before restoring. Temporary auth and preference loading no longer disables it when the activity is recreated. Touches and drag/drop are ignored while the keyguard is locked. Application overlays sit below critical system windows, so secure lock screens may hide the bubble; a public lock-screen notification offers an unlock-to-open route. Android notification privacy settings control whether that notification is visible.

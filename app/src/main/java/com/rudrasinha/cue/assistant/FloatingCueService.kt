@@ -1,7 +1,11 @@
 package com.rudrasinha.cue.assistant
 
+import android.app.KeyguardManager
 import android.app.Service
 import android.content.Intent
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.IntentFilter
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.PixelFormat
@@ -19,14 +23,27 @@ import android.widget.FrameLayout
 import android.widget.TextView
 import com.rudrasinha.cue.CaptureIntake
 import com.rudrasinha.cue.importedText
+import com.rudrasinha.cue.reminders.ReminderScheduler
+import com.rudrasinha.cue.settings.ThemeStore
 import kotlin.math.abs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 
 class FloatingCueService : Service() {
+    private val keyguard by lazy { getSystemService(KeyguardManager::class.java) }
+    private val state by lazy { getSharedPreferences("cue_floating_window", Context.MODE_PRIVATE) }
+    private val unlockReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action == Intent.ACTION_SCREEN_OFF) {
+                expanded = false
+                if (root != null) showWindow()
+            } else if (intent.action == Intent.ACTION_USER_PRESENT && root != null) showWindow()
+        }
+    }
     private val windows by lazy { getSystemService(WindowManager::class.java) }
     private val handler = Handler(Looper.getMainLooper())
     private val captureScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -63,6 +80,31 @@ class FloatingCueService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun onCreate() {
+        super.onCreate()
+        rightEdge = state.getBoolean("right_edge", true)
+        centerY = state.getInt("center_y", 0)
+        opacity = state.getFloat("opacity", opacity)
+        panel = state.getBoolean("panel", false)
+        accent = state.getInt("accent", accent)
+        onAccent = state.getInt("on_accent", onAccent)
+        surface = state.getInt("surface", surface)
+        onSurface = state.getInt("on_surface", onSurface)
+        registerReceiver(unlockReceiver, IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_USER_PRESENT)
+        })
+    }
+
+    private fun persistState() {
+        state.edit().putBoolean("right_edge", rightEdge).putInt("center_y", centerY)
+            .putFloat("opacity", opacity).putBoolean("panel", panel)
+            .putInt("accent", accent).putInt("on_accent", onAccent)
+            .putInt("surface", surface).putInt("on_surface", onSurface).apply()
+    }
+
+    private fun locked() = keyguard.isKeyguardLocked
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (!Settings.canDrawOverlays(this)) {
             stopSelf()
@@ -87,11 +129,21 @@ class FloatingCueService : Service() {
             return START_NOT_STICKY
         }
         if (centerY == 0) centerY = screenHeight / 2
-        if (root == null || colorsChanged) showWindow() else root?.findViewWithTag<View>("bubble")?.alpha =
+        persistState()
+        if (intent == null) {
+            captureScope.launch {
+                val enabled = ThemeStore(applicationContext).floatingCue.first()
+                val owner = ReminderScheduler(applicationContext).activeOwnerId()
+                handler.post {
+                    if (!enabled || owner == null || !Settings.canDrawOverlays(this@FloatingCueService)) stopSelf()
+                    else showWindow()
+                }
+            }
+        } else if (root == null || colorsChanged) showWindow() else root?.findViewWithTag<View>("bubble")?.alpha =
             if (expanded) 1f else opacity
         handler.removeCallbacks(permissionCheck)
         handler.postDelayed(permissionCheck, 5000)
-        return START_NOT_STICKY
+        return START_STICKY
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -102,6 +154,7 @@ class FloatingCueService : Service() {
 
     override fun onDestroy() {
         handler.removeCallbacks(permissionCheck)
+        unregisterReceiver(unlockReceiver)
         captureScope.cancel()
         root?.let { runCatching { windows.removeViewImmediate(it) } }
         root = null
@@ -143,6 +196,7 @@ class FloatingCueService : Service() {
             elevation = dp(12).toFloat()
             alpha = if (expanded) 1f else opacity
             setOnClickListener {
+                if (locked()) return@setOnClickListener
                 if (!expanded && screenHeight < menuHeight + dp(76)) {
                     startActivity(AssistantControls.shortcutIntent(this@FloatingCueService,
                         AssistantControls.OPEN_MENU))
@@ -154,7 +208,7 @@ class FloatingCueService : Service() {
         }
         bubble.setOnDragListener { view, event ->
             when (event.action) {
-                DragEvent.ACTION_DRAG_STARTED -> event.clipDescription != null
+                DragEvent.ACTION_DRAG_STARTED -> !locked() && event.clipDescription != null
                 DragEvent.ACTION_DRAG_ENTERED -> {
                     view.scaleX = 1.18f; view.scaleY = 1.18f
                     (view as TextView).text = "↓"
@@ -166,6 +220,7 @@ class FloatingCueService : Service() {
                     true
                 }
                 DragEvent.ACTION_DROP -> {
+                    if (locked()) return@setOnDragListener false
                     view.scaleX = 1f; view.scaleY = 1f
                     (view as TextView).text = "✓"
                     val clip = event.clipData
@@ -209,6 +264,7 @@ class FloatingCueService : Service() {
             var startY = 0
             var dragged = false
             override fun onTouch(view: View, event: MotionEvent): Boolean {
+                if (locked()) return true
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
                         downX = event.rawX; downY = event.rawY
@@ -233,6 +289,7 @@ class FloatingCueService : Service() {
                             if (!expanded) {
                                 rightEdge = windowParams.x + size / 2 > screenWidth / 2
                                 centerY = windowParams.y + size / 2
+                                persistState()
                                 showWindow()
                             }
                         } else view.performClick()
@@ -269,6 +326,7 @@ class FloatingCueService : Service() {
                 }
                 elevation = dp(8).toFloat()
                 setOnClickListener {
+                    if (locked()) return@setOnClickListener
                     expanded = false
                     showWindow()
                     startActivity(AssistantControls.shortcutIntent(this@FloatingCueService, action.key))

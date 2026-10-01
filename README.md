@@ -24,3 +24,5 @@ See [Cue account setup](docs/M1_ACCOUNT_SETUP.md) for the Google Cloud and Supab
 - Follow [the frozen architecture](docs/ARCHITECTURE.md) and [phase acceptance criteria](docs/MILESTONES.md). Put new ideas into the later-phase backlog before changing active phase scope.
 - All reminder entry points call the same domain pipeline. The Android app owns local alarm execution; remote AI services never fire reminders.
 - Log feature status honestly. A visible screen or mock data does not count as a completed integration.
+
+In **You → Reminder sound**, choose System default or one of 20 built-in sounds. Floating Cue stays active as an opted-in foreground service when Cue is backgrounded. On a secure lock screen, use the ongoing notification to unlock and return to Cue; Android can hide overlays behind the keyguard.

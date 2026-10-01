@@ -3,7 +3,6 @@ package com.rudrasinha.cue.reminders
 import android.Manifest
 import android.app.AlarmManager
 import android.app.Notification
-import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
@@ -18,6 +17,8 @@ import com.rudrasinha.cue.data.CommitmentEntity
 import com.rudrasinha.cue.data.CueDatabase
 import com.rudrasinha.cue.data.ReminderEventEntity
 import com.rudrasinha.cue.planning.DailyPlanScheduler
+import com.rudrasinha.cue.settings.ThemeStore
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -109,9 +110,10 @@ class ReminderReceiver : BroadcastReceiver() {
                     val item = CueDatabase.get(context).commitments().byId(id) ?: return@launch
                     if (item.status != "active" || item.dueAtMillis != intent.getLongExtra("due", -1L)) return@launch
                     if (item.ownerId != "guest" && item.ownerId != scheduler.activeOwnerId()) return@launch
+                    val toneId = ThemeStore(context).reminderTone.first()
                     var delivered = false
                     synchronized(deliveryLock) {
-                        if (!scheduler.wasDelivered(item) && showNotification(context, item)) {
+                        if (!scheduler.wasDelivered(item) && showNotification(context, item, toneId)) {
                             scheduler.markDelivered(item)
                             delivered = true
                         }
@@ -138,15 +140,16 @@ class ReminderReceiver : BroadcastReceiver() {
         }
     }
 
-    private fun showNotification(context: Context, item: CommitmentEntity): Boolean {
+    private fun showNotification(context: Context, item: CommitmentEntity, toneId: String): Boolean {
         if (Build.VERSION.SDK_INT >= 33 &&
             context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return false
         val manager = context.getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(NotificationChannel("cue_reminders", "Cue reminders",
-            NotificationManager.IMPORTANCE_HIGH))
+        val channelId = ReminderTones.ensureChannel(context, toneId)
+        if (!manager.areNotificationsEnabled() ||
+            manager.getNotificationChannel(channelId)?.importance == NotificationManager.IMPORTANCE_NONE) return false
         val open = PendingIntent.getActivity(context, item.id.hashCode(),
             Intent(context, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        val notice = Notification.Builder(context, "cue_reminders")
+        val notice = Notification.Builder(context, channelId)
             .setSmallIcon(R.drawable.ic_cue_foreground)
             .setContentTitle(item.title)
             .setContentText(item.details?.takeIf { it.isNotBlank() } ?: "It's time for your reminder.")

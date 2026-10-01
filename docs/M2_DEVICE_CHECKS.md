@@ -12,3 +12,10 @@ P2 is in progress on `develop`. Do not merge it to `main` until these checks pas
 7. Deny the notification permission once and verify Cue tells you alerts cannot be displayed. Use **Open settings**, enable the app and reminder channel, and return: the warning should clear without restarting Cue. With exact-alarm access unavailable, the app keeps an inexact alarm and explains the possible delay. For an exact-alarm permission change, schedule an alert with access granted, revoke access before it fires, and wait for the backup alert. When access stays granted, confirm the backup does not post a duplicate after the exact alert. The notification should show the reminder title and optional note.
 
 The current flow has one alert per reminder. Internally, the canonical record remains a Commitment; the app calls it a reminder. Source/history timeline and local compression are partially implemented; cloud archive compression and multi-device conflict resolution remain in later phases. A successful debug build alone does not pass P2.
+
+### Reminder sound and floating bubble device check
+
+- In You → Reminder sound, preview all 20 Cue sounds, select one, schedule a reminder, and confirm its notification plays that sound. Select System default and repeat. Check Android's per-channel sound settings if a channel was manually muted.
+- Enable Floating Cue, press Home, switch apps, rotate the device, and reopen Cue. Confirm the bubble remains visible and retains its position.
+- Lock the phone: bubble actions must not accept taps or drops. The ongoing notification should offer “Unlock to use Cue” where lock-screen notification visibility is enabled. After unlocking, confirm the bubble is available again. Secure keyguards can hide application overlays by Android design.
+- With Floating Cue enabled, kill the process through Android's normal background eviction and check the sticky service restore. Force-stop and manufacturer battery restrictions can prevent automatic restarts.
