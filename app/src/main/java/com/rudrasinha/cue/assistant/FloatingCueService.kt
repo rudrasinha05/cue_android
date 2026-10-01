@@ -12,21 +12,34 @@ import android.os.Looper
 import android.provider.Settings
 import android.view.Gravity
 import android.view.MotionEvent
+import android.view.DragEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.TextView
+import com.rudrasinha.cue.CaptureIntake
+import com.rudrasinha.cue.importedText
 import kotlin.math.abs
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 class FloatingCueService : Service() {
     private val windows by lazy { getSystemService(WindowManager::class.java) }
     private val handler = Handler(Looper.getMainLooper())
+    private val captureScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var root: FrameLayout? = null
     private var expanded = false
     private var rightEdge = true
     private var centerY = 0
     private var opacity = 0.82f
     private var panel = false
+    private var accent = Color.rgb(145, 118, 244)
+    private var onAccent = Color.WHITE
+    private var surface = Color.rgb(37, 34, 53)
+    private var onSurface = Color.WHITE
     private val size get() = dp(64)
     private val menuWidth get() = dp(260)
     private val menuHeight get() = dp(390)
@@ -58,6 +71,14 @@ class FloatingCueService : Service() {
         opacity = (intent?.getFloatExtra(AssistantControls.EXTRA_OPACITY, opacity) ?: opacity)
             .coerceIn(0.35f, 1f)
         panel = intent?.getBooleanExtra(AssistantControls.EXTRA_PANEL, panel) ?: panel
+        val newAccent = intent?.getIntExtra(AssistantControls.EXTRA_ACCENT, accent) ?: accent
+        val newOnAccent = intent?.getIntExtra(AssistantControls.EXTRA_ON_ACCENT, onAccent) ?: onAccent
+        val newSurface = intent?.getIntExtra(AssistantControls.EXTRA_SURFACE, surface) ?: surface
+        val newOnSurface = intent?.getIntExtra(AssistantControls.EXTRA_ON_SURFACE, onSurface) ?: onSurface
+        val colorsChanged = newAccent != accent || newOnAccent != onAccent ||
+            newSurface != surface || newOnSurface != onSurface
+        accent = newAccent; onAccent = newOnAccent
+        surface = newSurface; onSurface = newOnSurface
         try {
             startForeground(AssistantControls.FLOATING_ID,
                 AssistantControls.notification(this, withActions = panel, floating = true))
@@ -66,7 +87,7 @@ class FloatingCueService : Service() {
             return START_NOT_STICKY
         }
         if (centerY == 0) centerY = screenHeight / 2
-        if (root == null) showWindow() else root?.findViewWithTag<View>("bubble")?.alpha =
+        if (root == null || colorsChanged) showWindow() else root?.findViewWithTag<View>("bubble")?.alpha =
             if (expanded) 1f else opacity
         handler.removeCallbacks(permissionCheck)
         handler.postDelayed(permissionCheck, 5000)
@@ -81,6 +102,7 @@ class FloatingCueService : Service() {
 
     override fun onDestroy() {
         handler.removeCallbacks(permissionCheck)
+        captureScope.cancel()
         root?.let { runCatching { windows.removeViewImmediate(it) } }
         root = null
         super.onDestroy()
@@ -111,11 +133,12 @@ class FloatingCueService : Service() {
             typeface = android.graphics.Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
             contentDescription = "Floating Cue. Double tap for actions; drag to move."
-            setTextColor(Color.WHITE)
+            setTextColor(onAccent)
             background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.rgb(145, 118, 244), Color.rgb(76, 61, 155))).apply {
+                intArrayOf(accent, Color.rgb(Color.red(accent) * 3 / 4,
+                    Color.green(accent) * 3 / 4, Color.blue(accent) * 3 / 4))).apply {
                 cornerRadius = dp(24).toFloat()
-                setStroke(dp(1), Color.rgb(206, 190, 255))
+                setStroke(dp(1), accent)
             }
             elevation = dp(12).toFloat()
             alpha = if (expanded) 1f else opacity
@@ -127,6 +150,51 @@ class FloatingCueService : Service() {
                     expanded = !expanded
                     showWindow()
                 }
+            }
+        }
+        bubble.setOnDragListener { view, event ->
+            when (event.action) {
+                DragEvent.ACTION_DRAG_STARTED -> event.clipDescription != null
+                DragEvent.ACTION_DRAG_ENTERED -> {
+                    view.scaleX = 1.18f; view.scaleY = 1.18f
+                    (view as TextView).text = "↓"
+                    true
+                }
+                DragEvent.ACTION_DRAG_EXITED, DragEvent.ACTION_DRAG_ENDED -> {
+                    view.scaleX = 1f; view.scaleY = 1f
+                    (view as TextView).text = "cue"
+                    true
+                }
+                DragEvent.ACTION_DROP -> {
+                    view.scaleX = 1f; view.scaleY = 1f
+                    (view as TextView).text = "✓"
+                    val clip = event.clipData
+                    if (clip == null || clip.itemCount == 0) return@setOnDragListener false
+                    val intake = CaptureIntake(applicationContext)
+                    (0 until minOf(clip.itemCount, 8)).forEach { index ->
+                        val item = clip.getItemAt(index)
+                        val uri = item.uri
+                        val text = item.text?.toString() ?: item.htmlText?.let {
+                            android.text.Html.fromHtml(it, android.text.Html.FROM_HTML_MODE_COMPACT).toString()
+                        }
+                        captureScope.launch {
+                            try {
+                                if (uri != null) {
+                                    val draft = importedText(applicationContext, uri)
+                                    intake.accept(draft.text, "drop", draft.origin.title, uri.toString())
+                                } else if (!text.isNullOrBlank()) intake.accept(text, "drop")
+                                else intake.failure("This app didn't provide readable data. Try Share → Cue.")
+                            } catch (_: SecurityException) {
+                                intake.failure("The source app did not grant image access. Use Share → Cue.")
+                            } catch (e: Exception) {
+                                intake.failure(e.message ?: "Try sharing this item with Cue instead.")
+                            }
+                        }
+                    }
+                    handler.postDelayed({ (view as TextView).text = "cue" }, 1300)
+                    true
+                }
+                else -> true
             }
         }
         val bubbleX = if (expanded && rightEdge) width - size else 0
@@ -193,11 +261,11 @@ class FloatingCueService : Service() {
                 typeface = android.graphics.Typeface.DEFAULT_BOLD
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(dp(15), 0, dp(8), 0)
-                setTextColor(Color.rgb(248, 246, 255))
+                setTextColor(onSurface)
                 background = GradientDrawable().apply {
-                    setColor(Color.rgb(37, 34, 53))
+                    setColor(surface)
                     cornerRadius = dp(18).toFloat()
-                    setStroke(dp(1), Color.rgb(112, 92, 169))
+                    setStroke(dp(1), accent)
                 }
                 elevation = dp(8).toFloat()
                 setOnClickListener {

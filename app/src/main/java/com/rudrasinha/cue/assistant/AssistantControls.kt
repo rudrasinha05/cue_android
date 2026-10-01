@@ -30,6 +30,10 @@ object AssistantControls {
     const val OPEN_MENU = "menu"
     const val EXTRA_OPACITY = "opacity"
     const val EXTRA_PANEL = "panel"
+    const val EXTRA_ACCENT = "accent"
+    const val EXTRA_ON_ACCENT = "on_accent"
+    const val EXTRA_SURFACE = "surface"
+    const val EXTRA_ON_SURFACE = "on_surface"
     const val CHANNEL_ID = "cue_controls"
     const val PANEL_ID = 2041
     const val FLOATING_ID = 2042

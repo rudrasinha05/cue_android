@@ -6,6 +6,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import com.rudrasinha.cue.settings.ColorTheme
 import com.rudrasinha.cue.settings.ThemePreference
 
@@ -61,11 +62,15 @@ fun CueTheme(preference: ThemePreference, colorTheme: ColorTheme, content: @Comp
             onPrimary = colors.darkBackground,
             primaryContainer = colors.darkContainer,
             onPrimaryContainer = colors.darkPrimary,
+            secondary = lerp(colors.darkPrimary, Color(0xFF76C5E6), 0.46f),
+            tertiary = lerp(colors.darkPrimary, Color(0xFFFFCF7A), 0.45f),
             secondaryContainer = colors.darkContainer,
             onSecondaryContainer = colors.darkPrimary,
             background = colors.darkBackground,
-            surface = Color(0xFF24222B),
-            outlineVariant = Color(0xFF48444F)
+            surface = lerp(colors.darkBackground, colors.darkContainer, 0.30f),
+            onSurface = Color(0xFFF8F6FF),
+            onSurfaceVariant = Color(0xFFBFBDCA),
+            outlineVariant = lerp(colors.darkBackground, colors.darkPrimary, 0.32f)
         )
     } else {
         lightColorScheme(
@@ -73,11 +78,15 @@ fun CueTheme(preference: ThemePreference, colorTheme: ColorTheme, content: @Comp
             onPrimary = Color.White,
             primaryContainer = colors.lightContainer,
             onPrimaryContainer = colors.primary,
+            secondary = lerp(colors.primary, Color(0xFF117E9F), 0.40f),
+            tertiary = lerp(colors.primary, Color(0xFFA36A13), 0.48f),
             secondaryContainer = colors.lightContainer,
             onSecondaryContainer = colors.primary,
             background = colors.lightBackground,
             surface = Color.White,
-            outlineVariant = Color(0xFFE6E3E9)
+            onSurface = Color(0xFF23202B),
+            onSurfaceVariant = Color(0xFF5E5B69),
+            outlineVariant = lerp(colors.lightBackground, colors.primary, 0.22f)
         )
     }
     MaterialTheme(colorScheme = scheme, content = content)

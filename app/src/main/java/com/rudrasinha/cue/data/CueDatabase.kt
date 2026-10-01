@@ -80,6 +80,9 @@ interface CommitmentDao {
     @Query("SELECT * FROM commitments WHERE id = :id LIMIT 1")
     suspend fun byId(id: String): CommitmentEntity?
 
+    @Query("SELECT * FROM commitments WHERE ownerId = :ownerId AND status = 'active' AND title = :title AND dueAtMillis = :due LIMIT 1")
+    suspend fun sameActiveReminder(ownerId: String, title: String, due: Long): CommitmentEntity?
+
     @Query("SELECT * FROM commitments WHERE ownerId = :ownerId AND status = 'active' AND dueAtMillis > :now")
     suspend fun futureAlarms(ownerId: String, now: Long): List<CommitmentEntity>
 

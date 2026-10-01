@@ -1,6 +1,6 @@
 # Cue architecture v1.1
 
-This document freezes the core behavior agreed before implementation. Internal packages can change when a milestone requires it, provided these contracts remain intact. New features go to the backlog for a later phase.
+This document records the product contracts. Internal packages may change while those contracts stay intact. The work remains grouped into five phases.
 
 ## Product and identity
 
@@ -30,7 +30,11 @@ All entry points invoke one domain pipeline and one quick-action system. A commi
 - Cue's dedicated Supabase project (`gukhuakkguzzhrvtyszx`, BABA GROUPS, `ap-south-1`) provides Auth and PostgreSQL with per-user RLS. Storage and server functions are added when integrations require them. No service-role key, Google client secret, or AI provider key enters the APK.
 - Google sign-in is the primary account path through Android Credential Manager and Supabase Auth. Guest mode remains available for local reminders. On sign-in, guest commitments migrate once to the authenticated owner using stable IDs; account history is restored on returning sign-in. Sign-out stops the floating Cue and removes account-bound local access while retaining server history.
 - AI is accessed through a provider-neutral server gateway. Extraction produces structured candidates and provenance; deterministic scheduling fires from local data even when the network or AI service fails.
+- Local ML Kit OCR and English date entity extraction can suggest a future time on the device. Auto-save requires a single actionable reminder line and a future time. Ambiguous content goes to review (or is ignored in a background screen session). A model download may be required; its failure never blocks manual reminders. Provider-backed interpretation and multi-source semantic deduplication remain separate work.
 - Per-source opt-in governs email, calendar, notification access, microphone, overlay, and import permissions. Request permissions when the feature is enabled. Avoid unrestricted SMS or Accessibility scraping. Raw third-party content is retained only as needed under explicit settings.
+- Floating Cue accepts a global drag onto its collapsed bubble without opening the app. Plain/HTML text and supported readable image, text, PDF, and DOCX URIs use the shared intake. Source apps must offer cross-app drag and grant URI access; unsupported/restricted drops show a notification and can use Android Share → Cue instead. Successful/duplicate/review outcomes are acknowledged in Cue's capture notification channel.
+- Screen analysis starts only from the You button with Android MediaProjection consent on every session. On Android 14+, the user chooses a single app in the system picker; Cue does not claim to enforce an app-only selection when Android offers the whole display. A foreground notification has a Stop action, frames are sampled for on-device OCR, and no video or complete screen dump is retained. Only the accepted reminder line and source metadata enter history. Stopping, system revocation, or sign-out ends the session; this is not an Accessibility service or a permanent per-app background permission.
+- Daily schedule is opt-in in You. Wake and bed times bound the draft day; fixed reminders keep their original time, routine anchors avoid fixed events, and no-due active reminders occupy free slots without creating new canonical reminders. Active unfinished items appear again when the next day's plan is rebuilt. A local morning alarm posts a schedule notification if notification access is available. The plan is derived from current reminders and preferences; it does not rewrite reminder due times.
 - A foreground or user-visible path must be used for any supported wake-word mode; tap-to-talk is the guaranteed voice path.
 
 ## Shared six actions

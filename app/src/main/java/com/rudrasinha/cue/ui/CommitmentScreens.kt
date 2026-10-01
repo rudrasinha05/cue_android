@@ -43,26 +43,33 @@ import java.time.YearMonth
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
-private val canvasTop = Color(0xFF101017)
-private val canvasMiddle = Color(0xFF29243A)
-private val cardColor = Color(0xFF19191D)
-private val ivory = Color(0xFFF8F6FF)
-private val muted = Color(0xFFADA9BA)
-private val violet = Color(0xFFB69CFF)
-private val coral = Color(0xFFFF858A)
-private val sky = Color(0xFF72B8FF)
-private val amber = Color(0xFFFFC76B)
-private val aqua = Color(0xFF62D0D1)
+private val canvasTop: Color @Composable get() = MaterialTheme.colorScheme.background
+private val cardColor: Color @Composable get() = MaterialTheme.colorScheme.surface
+private val ivory: Color @Composable get() = MaterialTheme.colorScheme.onSurface
+private val muted: Color @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
+private val violet: Color @Composable get() = MaterialTheme.colorScheme.primary
+private val coral: Color @Composable get() = MaterialTheme.colorScheme.error
+private val sky: Color @Composable get() = MaterialTheme.colorScheme.secondary
+private val amber: Color @Composable get() = MaterialTheme.colorScheme.tertiary
+private val aqua: Color @Composable get() = MaterialTheme.colorScheme.primary
 private val timeFormat = DateTimeFormatter.ofPattern("EEE, d MMM · h:mm a")
 private val dayFormat = DateTimeFormatter.ofPattern("EEEE, d MMMM")
 
-private enum class ReminderView(val label: String, val icon: ImageVector, val tint: Color) {
-    TODAY("Today", Icons.Filled.CalendarMonth, coral),
-    SCHEDULED("Scheduled", Icons.Filled.Schedule, sky),
-    PAST("Past", Icons.Filled.History, amber),
-    NO_ALERT("No alert", Icons.Filled.NotificationsOff, violet),
-    COMPLETED("Completed", Icons.Filled.CheckCircle, muted),
-    ALL("All", Icons.Filled.ViewAgenda, aqua)
+private enum class ReminderView(val label: String, val icon: ImageVector) {
+    TODAY("Today", Icons.Filled.CalendarMonth),
+    SCHEDULED("Scheduled", Icons.Filled.Schedule),
+    PAST("Past", Icons.Filled.History),
+    NO_ALERT("No alert", Icons.Filled.NotificationsOff),
+    COMPLETED("Completed", Icons.Filled.CheckCircle),
+    ALL("All", Icons.Filled.ViewAgenda)
+}
+
+private val ReminderView.tint: Color @Composable get() = when (this) {
+    ReminderView.TODAY, ReminderView.PAST -> coral
+    ReminderView.SCHEDULED -> sky
+    ReminderView.NO_ALERT -> violet
+    ReminderView.COMPLETED -> muted
+    ReminderView.ALL -> aqua
 }
 
 data class CaptureDraft(val id: String, val text: String, val origin: CaptureOrigin,
@@ -77,6 +84,7 @@ fun CommitmentListScreen(
     onComplete: (String) -> Unit, onSnooze: (String) -> Unit, onArchive: (String) -> Unit,
     onDelete: (String) -> Unit,
     signedIn: Boolean, onSync: () -> Unit, onSettings: () -> Unit,
+    onDayPlan: () -> Unit,
     externalDraft: CaptureDraft?, onCaptureDismiss: () -> Unit,
     focusTodayToken: Int = 0,
     modifier: Modifier = Modifier
@@ -144,10 +152,9 @@ fun CommitmentListScreen(
                 .thenBy { it.title.lowercase() }) }
     val isCompleted = !upcoming && selectedView == ReminderView.COMPLETED
 
-    MaterialTheme(colorScheme = darkColorScheme(primary = violet, background = canvasTop,
-        surface = cardColor, onSurface = ivory, onSurfaceVariant = muted)) {
+    run {
         Box(modifier.fillMaxSize().background(Brush.verticalGradient(
-            listOf(canvasTop, Color(0xFF1A1926), canvasTop)))) {
+            listOf(canvasTop, MaterialTheme.colorScheme.primaryContainer.copy(alpha = .35f), canvasTop)))) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
                 .padding(horizontal = 22.dp)) {
                 Spacer(Modifier.height(24.dp))
@@ -203,7 +210,7 @@ fun CommitmentListScreen(
                 Spacer(Modifier.height(24.dp))
                 if (upcoming) {
                     Surface(shape = RoundedCornerShape(28.dp), color = cardColor,
-                        border = BorderStroke(1.dp, Color(0xFF343140))) {
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
                         Column(Modifier.fillMaxWidth().padding(18.dp)) {
                             CalendarGrid(visibleMonth, selectedDate,
                                 active.mapNotNull(::dateOf).groupingBy { it }.eachCount(),
@@ -220,7 +227,7 @@ fun CommitmentListScreen(
                         Text("Today", color = violet)
                     }
                 } else {
-                    SummaryHero(active, today, now, onAdd = { openEditor() })
+                    SummaryHero(active, today, now, onAdd = { openEditor() }, onDayPlan = onDayPlan)
                     Spacer(Modifier.height(28.dp))
                     Text("EXPLORE", color = muted, style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold)
@@ -258,7 +265,7 @@ fun CommitmentListScreen(
                             else "One thing at a time",
                             color = muted, style = MaterialTheme.typography.bodySmall)
                     }
-                    Surface(shape = CircleShape, color = Color(0xFF343047)) {
+                    Surface(shape = CircleShape, color = MaterialTheme.colorScheme.secondaryContainer) {
                         Text("${visibleItems.size}", color = ivory,
                             style = MaterialTheme.typography.labelMedium,
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
@@ -308,7 +315,8 @@ fun CommitmentListScreen(
                 modifier = Modifier.align(Alignment.BottomEnd)
                     .padding(end = 22.dp, bottom = 20.dp).height(58.dp),
                 shape = RoundedCornerShape(21.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = violet, contentColor = canvasTop),
+                colors = ButtonDefaults.buttonColors(containerColor = violet,
+                    contentColor = MaterialTheme.colorScheme.onPrimary),
                 contentPadding = PaddingValues(horizontal = 22.dp)) {
                 Icon(Icons.Filled.Add, contentDescription = null)
                 Spacer(Modifier.width(10.dp))
@@ -328,42 +336,50 @@ fun CommitmentListScreen(
 
 @Composable
 private fun SummaryHero(active: List<CommitmentEntity>, today: LocalDate, now: Long,
-    onAdd: () -> Unit) {
+    onAdd: () -> Unit, onDayPlan: () -> Unit) {
     val todayCount = active.count { item ->
         item.dueAtMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate() } == today
     }
     val next = active.filter { (it.dueAtMillis ?: 0L) > now }
         .minByOrNull { it.dueAtMillis ?: Long.MAX_VALUE }
+    val heroText = MaterialTheme.colorScheme.onPrimary
     Box(Modifier.fillMaxWidth().height(184.dp).clip(RoundedCornerShape(30.dp))
-        .background(Brush.linearGradient(listOf(Color(0xFF493D77), Color(0xFF25243D))))
-        .border(1.dp, Color(0xFF7468A1), RoundedCornerShape(30.dp))) {
+        .background(Brush.linearGradient(listOf(violet, violet.copy(alpha = .86f))))
+        .border(1.dp, MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(30.dp))) {
         Box(Modifier.align(Alignment.TopEnd).offset(x = 56.dp, y = (-76).dp)
-            .size(220.dp).background(ivory.copy(alpha = .055f), CircleShape))
+            .size(220.dp).background(heroText.copy(alpha = .10f), CircleShape))
         Box(Modifier.align(Alignment.BottomEnd).offset(x = 30.dp, y = 87.dp)
-            .size(166.dp).background(ivory.copy(alpha = .045f), CircleShape))
+            .size(166.dp).background(heroText.copy(alpha = .08f), CircleShape))
         Column(Modifier.fillMaxSize().padding(23.dp), verticalArrangement = Arrangement.SpaceBetween) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = Color(0xFFE2D7FF),
+                Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = heroText,
                     modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("TODAY'S FOCUS", color = Color(0xFFE2D7FF),
+                Text("TODAY'S FOCUS", color = heroText,
                     style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
             }
             Row(verticalAlignment = Alignment.Bottom) {
                 Column(Modifier.weight(1f)) {
-                    Text("${todayCount}", color = ivory,
+                    Text("${todayCount}", color = heroText,
                         style = MaterialTheme.typography.displayMedium, fontWeight = FontWeight.Bold)
                     Text(if (todayCount == 1) "reminder for today" else "reminders for today",
-                        color = Color(0xFFE1DDEE), style = MaterialTheme.typography.bodyMedium)
+                        color = heroText.copy(alpha = .85f), style = MaterialTheme.typography.bodyMedium)
                 }
                 IconButton(onClick = onAdd,
-                    modifier = Modifier.size(48.dp).background(ivory, CircleShape)) {
-                    Icon(Icons.Filled.Add, contentDescription = "Add reminder", tint = Color(0xFF302A49))
+                    modifier = Modifier.size(48.dp).background(heroText, CircleShape)) {
+                    Icon(Icons.Filled.Add, contentDescription = "Add reminder", tint = violet)
                 }
             }
-            Text(next?.let { "NEXT  ·  ${it.title.take(35)}" } ?: "THE DAY IS YOURS",
-                color = Color(0xFFE2D7FF), style = MaterialTheme.typography.labelSmall,
-                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(Modifier.fillMaxWidth().clickable(onClick = onDayPlan),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text(next?.let { "NEXT · ${it.title.take(25)}" } ?: "THE DAY IS YOURS",
+                    color = heroText, style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.weight(1f), maxLines = 1,
+                    overflow = TextOverflow.Ellipsis)
+                Text("VIEW DAY  ›", color = heroText,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold)
+            }
         }
     }
 }
@@ -372,17 +388,18 @@ private fun SummaryHero(active: List<CommitmentEntity>, today: LocalDate, now: L
 private fun FilterPill(view: ReminderView, count: Int, selected: Boolean, onClick: () -> Unit) {
     Surface(onClick = onClick, shape = RoundedCornerShape(18.dp),
         color = if (selected) violet else cardColor,
-        border = BorderStroke(1.dp, if (selected) violet else Color(0xFF373541))) {
+        border = BorderStroke(1.dp, if (selected) violet else MaterialTheme.colorScheme.outlineVariant)) {
         Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Icon(view.icon, contentDescription = null,
-                tint = if (selected) canvasTop else view.tint, modifier = Modifier.size(17.dp))
+                tint = if (selected) MaterialTheme.colorScheme.onPrimary else view.tint,
+                modifier = Modifier.size(17.dp))
             Spacer(Modifier.width(7.dp))
-            Text(view.label, color = if (selected) canvasTop else ivory,
+            Text(view.label, color = if (selected) MaterialTheme.colorScheme.onPrimary else ivory,
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium)
             Spacer(Modifier.width(8.dp))
-            Text(count.toString(), color = if (selected) canvasTop else muted,
+            Text(count.toString(), color = if (selected) MaterialTheme.colorScheme.onPrimary else muted,
                 style = MaterialTheme.typography.labelSmall)
         }
     }
@@ -391,10 +408,10 @@ private fun FilterPill(view: ReminderView, count: Int, selected: Boolean, onClic
 @Composable
 private fun EmptyReminderState(text: String, onAdd: () -> Unit) {
     Surface(shape = RoundedCornerShape(28.dp), color = cardColor,
-        border = BorderStroke(1.dp, Color(0xFF35333F))) {
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 28.dp),
             horizontalAlignment = Alignment.CenterHorizontally) {
-            Surface(shape = CircleShape, color = Color(0xFF363047)) {
+            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
                 Icon(Icons.Outlined.Lightbulb, contentDescription = null, tint = violet,
                     modifier = Modifier.padding(16.dp).size(30.dp))
             }
@@ -411,7 +428,7 @@ private fun EmptyReminderState(text: String, onAdd: () -> Unit) {
 
 @Composable
 private fun Notice(text: String, actionLabel: String, onAction: () -> Unit) {
-    Surface(shape = RoundedCornerShape(18.dp), color = Color(0xFF383049),
+    Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.primaryContainer,
         modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
             Text(text, color = ivory, style = MaterialTheme.typography.bodySmall)
@@ -439,7 +456,7 @@ private fun ReminderCard(item: CommitmentEntity, now: Long, completed: Boolean,
         else -> formatTime(item.dueAtMillis)
     }
     Surface(shape = RoundedCornerShape(24.dp), color = cardColor,
-        border = BorderStroke(1.dp, Color(0xFF36333F))) {
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 16.dp, bottom = 16.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.width(4.dp).height(54.dp)
@@ -548,13 +565,14 @@ private fun CalendarGrid(month: YearMonth, selectedDate: LocalDate,
                     if (date != null) Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("$number", color = when {
                             !enabled -> muted.copy(alpha = .35f)
-                            chosen -> canvasTop
+                            chosen -> MaterialTheme.colorScheme.onPrimary
                             else -> ivory
                         }, style = MaterialTheme.typography.bodyMedium,
                             fontWeight = if (chosen) FontWeight.Bold else FontWeight.Normal)
                         if ((counts[date] ?: 0) > 0) {
                             Spacer(Modifier.height(2.dp))
-                            Box(Modifier.size(4.dp).background(if (chosen) canvasTop else coral, CircleShape))
+                            Box(Modifier.size(4.dp).background(
+                                if (chosen) MaterialTheme.colorScheme.onPrimary else coral, CircleShape))
                         }
                     }
                 }
@@ -592,12 +610,11 @@ private fun ReminderEditor(item: CommitmentEntity?, suggestedTitle: String, sugg
         .atZone(ZoneId.systemDefault()).toInstant().toEpochMilli() else null
     val valid = title.isNotBlank() && (due == null || due > System.currentTimeMillis())
 
-    MaterialTheme(colorScheme = darkColorScheme(primary = violet, surface = Color(0xFF20212A),
-        onSurface = ivory, onSurfaceVariant = muted, outline = muted)) {
+    run {
         ModalBottomSheet(onDismissRequest = onDismiss,
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-            containerColor = Color(0xFF20212A), contentColor = ivory,
-            dragHandle = { Surface(shape = CircleShape, color = Color(0xFF6A6078),
+            containerColor = cardColor, contentColor = ivory,
+            dragHandle = { Surface(shape = CircleShape, color = muted,
                 modifier = Modifier.padding(top = 12.dp).size(width = 38.dp, height = 4.dp)) {} }) {
             LaunchedEffect(Unit) { titleFocus.requestFocus(); keyboard?.show() }
             Column(Modifier.fillMaxWidth().imePadding().verticalScroll(rememberScrollState())
@@ -623,9 +640,10 @@ private fun ReminderEditor(item: CommitmentEntity?, suggestedTitle: String, sugg
                     IconButton(onClick = { onSave(title.trim(), details.trim().ifBlank { null }, due) },
                         enabled = valid,
                         modifier = Modifier.size(52.dp).background(
-                            if (valid) violet else Color(0xFF465062), CircleShape)) {
+                            if (valid) violet else MaterialTheme.colorScheme.outlineVariant, CircleShape)) {
                         Icon(Icons.Filled.Check, contentDescription = "Save reminder",
-                            tint = if (valid) canvasTop else muted, modifier = Modifier.size(28.dp))
+                            tint = if (valid) MaterialTheme.colorScheme.onPrimary else muted,
+                            modifier = Modifier.size(28.dp))
                     }
                 }
                 if (showNote) {
@@ -640,7 +658,8 @@ private fun ReminderEditor(item: CommitmentEntity?, suggestedTitle: String, sugg
                     Surface(onClick = {
                         showCalendar = !showCalendar; showTime = false
                         focusManager.clearFocus(); keyboard?.hide()
-                    }, shape = RoundedCornerShape(16.dp), color = Color(0xFF353145),
+                    }, shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer,
                         modifier = Modifier.fillMaxWidth()) {
                         Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically) {
@@ -715,7 +734,8 @@ private fun QuickAction(icon: ImageVector, description: String, selected: Boolea
     Column(horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.width(59.dp).clickable(onClick = onClick)) {
         Surface(shape = RoundedCornerShape(16.dp), color =
-            if (selected) Color(0xFF49405F) else Color(0xFF30303A),
+            if (selected) MaterialTheme.colorScheme.primaryContainer
+            else MaterialTheme.colorScheme.secondaryContainer,
             border = if (selected) BorderStroke(1.dp, violet) else null) {
             Box(Modifier.size(50.dp), contentAlignment = Alignment.Center) {
                 Icon(icon, contentDescription = description,

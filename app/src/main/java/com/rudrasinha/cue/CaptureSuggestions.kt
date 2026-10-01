@@ -29,3 +29,21 @@ internal fun suggestedDue(text: String, clock: Clock = Clock.systemDefaultZone()
     return day.atTime(hour, minute).atZone(clock.zone).toInstant().toEpochMilli()
         .takeIf { it > clock.millis() }
 }
+
+internal data class ConfidentReminder(val title: String, val dueAtMillis: Long)
+
+/** Only an explicit action or appointment is safe to create without confirmation. */
+internal fun actionableReminder(line: String): Boolean = Regex(
+    "\\b(call|meet|meeting|appointment|pay|submit|send|email|book|buy|pick up|" +
+        "collect|renew|visit|take|bring|attend|register|deadline|due|interview|" +
+        "exam|flight|train|doctor|dentist|bill|class|event|webinar|follow up)\\b",
+    RegexOption.IGNORE_CASE).containsMatchIn(line)
+
+/** Require the date and time on one line, so OCR does not combine unrelated screen content. */
+internal fun confidentReminder(text: String, clock: Clock = Clock.systemDefaultZone()): ConfidentReminder? {
+    val candidates = text.lineSequence().map(String::trim).filter(String::isNotBlank)
+        .mapNotNull { line -> if (!actionableReminder(line)) null else
+            suggestedDue(line, clock)?.let { ConfidentReminder(line.take(100), it) } }
+        .take(2).toList()
+    return candidates.singleOrNull()
+}

@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.os.Build
+import android.media.projection.MediaProjectionManager
 import android.provider.Settings
 import android.speech.RecognizerIntent
 import androidx.activity.ComponentActivity
@@ -55,9 +56,11 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableFloatStateOf
@@ -67,7 +70,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -75,6 +78,7 @@ import com.rudrasinha.cue.data.CommitmentDao
 import com.rudrasinha.cue.assistant.AssistantControls
 import com.rudrasinha.cue.assistant.CueAction
 import com.rudrasinha.cue.assistant.FloatingCueService
+import com.rudrasinha.cue.assistant.ScreenInsightService
 import com.rudrasinha.cue.data.CommitmentActions
 import com.rudrasinha.cue.data.CueDatabase
 import com.rudrasinha.cue.data.CloudCommitments
@@ -92,20 +96,40 @@ import com.rudrasinha.cue.ui.AssistantActionSheet
 import com.rudrasinha.cue.ui.HistoryScreen
 import com.rudrasinha.cue.ui.themeSwatch
 import com.rudrasinha.cue.reminders.ReminderScheduler
+import com.rudrasinha.cue.planning.DailyPlanScheduler
+import com.rudrasinha.cue.ui.DailyPlanSheet
+import com.rudrasinha.cue.ui.timeLabel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import java.util.UUID
 import androidx.compose.runtime.LaunchedEffect
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.status.SessionStatus
 
 class MainActivity : ComponentActivity() {
+    private val intakeScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var permissionEpoch by mutableIntStateOf(0)
     private var captureDraft by mutableStateOf<CaptureDraft?>(null)
     private var shortcutAction by mutableStateOf<String?>(null)
 
     fun queueCapture(draft: CaptureDraft) { captureDraft = draft }
+    private fun readSharedUri(incoming: Intent?) {
+        if (incoming?.action != Intent.ACTION_SEND || sharedText(incoming) != null) return
+        val uri = if (Build.VERSION.SDK_INT >= 33)
+            incoming.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+        else @Suppress("DEPRECATION") incoming.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+        val source = uri ?: incoming.clipData?.getItemAt(0)?.uri ?: return
+        intakeScope.launch {
+            runCatching { withContext(Dispatchers.IO) { importedText(this@MainActivity, source) } }
+                .onSuccess(::queueCapture)
+                .onFailure { CaptureIntake(applicationContext).failure(
+                    it.message ?: "Could not read the shared item.") }
+        }
+    }
     private fun consumeShortcut() {
         shortcutAction = null
         intent?.removeExtra(AssistantControls.EXTRA_ACTION)
@@ -115,12 +139,14 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         sharedText(intent)?.let(::queueCapture)
+        readSharedUri(intent)
         shortcutAction = intent.getStringExtra(AssistantControls.EXTRA_ACTION)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         captureDraft = sharedText(intent)
+        readSharedUri(intent)
         shortcutAction = intent?.getStringExtra(AssistantControls.EXTRA_ACTION)
         val themeStore = ThemeStore(applicationContext)
         val database = CueDatabase.get(applicationContext)
@@ -133,6 +159,11 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         permissionEpoch++
+    }
+
+    override fun onDestroy() {
+        intakeScope.cancel()
+        super.onDestroy()
     }
 }
 
@@ -164,6 +195,10 @@ private fun CueApp(
     val floatingEnabled by themeStore.floatingCue.collectAsState(initial = false)
     val panelEnabled by themeStore.notificationPanel.collectAsState(initial = false)
     val floatingOpacity by themeStore.floatingOpacity.collectAsState(initial = 0.82f)
+    val screenRunning by ScreenInsightService.running.collectAsState()
+    val dailyPlanEnabled by themeStore.dailyPlanEnabled.collectAsState(initial = false)
+    val wakeMinute by themeStore.wakeMinute.collectAsState(initial = 420)
+    val bedMinute by themeStore.bedMinute.collectAsState(initial = 1320)
     val session by auth.client.auth.sessionStatus.collectAsState(initial = SessionStatus.Initializing)
     val userId = (session as? SessionStatus.Authenticated)?.session?.user?.id
     val ownerId = userId ?: "guest"
@@ -178,9 +213,12 @@ private fun CueApp(
     var selected by rememberSaveable { mutableStateOf(Tab.TODAY) }
     var todayFocusToken by remember { mutableIntStateOf(0) }
     var actionSheetOpen by remember { mutableStateOf(false) }
+    var dayPlanOpen by remember { mutableStateOf(false) }
     var controlMessage by remember { mutableStateOf<String?>(null) }
     var pendingOverlayEnable by remember { mutableStateOf(false) }
     var pendingPanelEnable by remember { mutableStateOf(false) }
+    var pendingDayEnable by remember { mutableStateOf(false) }
+    var pendingScreenStart by remember { mutableStateOf(false) }
     LaunchedEffect(captureDraft?.id) { if (captureDraft != null) selected = Tab.TODAY }
     var accountMessage by remember { mutableStateOf<String?>(null) }
     var accountBusy by remember { mutableStateOf(false) }
@@ -208,6 +246,20 @@ private fun CueApp(
             }
         }
     }
+    val projectionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == Activity.RESULT_OK && result.data != null) {
+            try {
+                activity.startForegroundService(Intent(activity, ScreenInsightService::class.java).apply {
+                    putExtra(ScreenInsightService.EXTRA_RESULT, result.resultCode)
+                    putExtra(ScreenInsightService.EXTRA_CONSENT, result.data)
+                })
+                controlMessage = "Analyzing the app you selected. Stop from Cue or the notification."
+            } catch (e: RuntimeException) {
+                controlMessage = e.message ?: "Could not start screen analysis."
+            }
+        }
+    }
     fun notificationsEnabled(): Boolean {
         val manager = activity.getSystemService(NotificationManager::class.java)
         val granted = Build.VERSION.SDK_INT < 33 ||
@@ -226,6 +278,21 @@ private fun CueApp(
             if (granted && AssistantControls.canPost(activity)) {
                 scope.launch { themeStore.setNotificationPanel(true) }
             } else controlMessage = "Allow Cue notifications to show the shortcut panel."
+        }
+        if (pendingDayEnable) {
+            pendingDayEnable = false
+            if (granted && notificationsEnabled()) scope.launch {
+                themeStore.setDailyPlanEnabled(true)
+                DailyPlanScheduler(activity).notifyToday()
+            }
+            else controlMessage = "Allow notifications for your morning schedule."
+        }
+        if (pendingScreenStart) {
+            pendingScreenStart = false
+            if (granted && Build.VERSION.SDK_INT >= 34) {
+                projectionLauncher.launch(activity.getSystemService(MediaProjectionManager::class.java)
+                    .createScreenCaptureIntent())
+            } else controlMessage = "Notifications are needed for visible screen analysis controls."
         }
     }
 
@@ -248,20 +315,8 @@ private fun CueApp(
         }
     }
 
-    LaunchedEffect(userId, floatingEnabled, panelEnabled, floatingOpacity, permissionEpoch) {
-        val floatingActive = userId != null && floatingEnabled && Settings.canDrawOverlays(activity)
-        if (floatingActive) {
-            try {
-                activity.startForegroundService(Intent(activity, FloatingCueService::class.java).apply {
-                    putExtra(AssistantControls.EXTRA_OPACITY, floatingOpacity)
-                    putExtra(AssistantControls.EXTRA_PANEL, panelEnabled)
-                })
-            } catch (e: RuntimeException) {
-                controlMessage = e.message ?: "Could not start floating Cue."
-                themeStore.setFloatingCue(false)
-            }
-        } else activity.stopService(Intent(activity, FloatingCueService::class.java))
-        AssistantControls.updatePanel(activity, panelEnabled, floatingActive)
+    LaunchedEffect(dailyPlanEnabled, wakeMinute, bedMinute, permissionEpoch) {
+        DailyPlanScheduler(activity).sync()
     }
 
     fun dispatchShortcut(action: CueAction) {
@@ -283,7 +338,7 @@ private fun CueApp(
                 "image/png", "image/webp",
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document"))
             CueAction.ASK -> selected = Tab.AI
-            CueAction.DAY -> { selected = Tab.TODAY; todayFocusToken++ }
+            CueAction.DAY -> { selected = Tab.TODAY; todayFocusToken++; dayPlanOpen = true }
             CueAction.SETTINGS -> selected = Tab.YOU
         }
     }
@@ -323,26 +378,45 @@ private fun CueApp(
     }
 
     CueTheme(theme, colorTheme) {
+        val colors = MaterialTheme.colorScheme
+        LaunchedEffect(userId, floatingEnabled, panelEnabled, floatingOpacity, permissionEpoch,
+            colors.primary, colors.onPrimary, colors.surface, colors.onSurface) {
+            val floatingActive = userId != null && floatingEnabled && Settings.canDrawOverlays(activity)
+            if (floatingActive) {
+                try {
+                    activity.startForegroundService(Intent(activity, FloatingCueService::class.java).apply {
+                        putExtra(AssistantControls.EXTRA_OPACITY, floatingOpacity)
+                        putExtra(AssistantControls.EXTRA_PANEL, panelEnabled)
+                        putExtra(AssistantControls.EXTRA_ACCENT, colors.primary.toArgb())
+                        putExtra(AssistantControls.EXTRA_ON_ACCENT, colors.onPrimary.toArgb())
+                        putExtra(AssistantControls.EXTRA_SURFACE, colors.surface.toArgb())
+                        putExtra(AssistantControls.EXTRA_ON_SURFACE, colors.onSurface.toArgb())
+                    })
+                } catch (e: RuntimeException) {
+                    controlMessage = e.message ?: "Could not start floating Cue."
+                    themeStore.setFloatingCue(false)
+                }
+            } else activity.stopService(Intent(activity, FloatingCueService::class.java))
+            AssistantControls.updatePanel(activity, panelEnabled, floatingActive)
+        }
         Scaffold(
             topBar = {
                 if (selected != Tab.TODAY && selected != Tab.UPCOMING) {
-                    val darkSection = selected == Tab.AI || selected == Tab.INBOX
                     TopAppBar(
                         title = { Text("cue", fontWeight = FontWeight.Bold,
-                            color = if (darkSection) Color(0xFFF8F6FF) else Color.Unspecified,
+                            color = MaterialTheme.colorScheme.onSurface,
                             style = MaterialTheme.typography.headlineMedium) },
-                        colors = TopAppBarDefaults.topAppBarColors(containerColor =
-                            if (darkSection) Color(0xFF101017) else MaterialTheme.colorScheme.background),
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.background),
                         actions = {
                             Surface(
                                 modifier = Modifier.padding(end = 20.dp),
                                 shape = RoundedCornerShape(12.dp),
-                                color = if (darkSection) Color(0xFF383049)
-                                    else MaterialTheme.colorScheme.secondaryContainer
+                                color = MaterialTheme.colorScheme.secondaryContainer
                             ) {
                                 Text(if (userId == null) "On this device" else "Sync on",
                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                    color = if (darkSection) Color(0xFFB69CFF) else Color.Unspecified,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
                                     style = MaterialTheme.typography.labelSmall)
                             }
                         }
@@ -399,6 +473,7 @@ private fun CueApp(
                         }
                     },
                     { selected = Tab.YOU },
+                    { dayPlanOpen = true },
                     captureDraft, onCaptureDismiss, todayFocusToken,
                     Modifier.padding(padding)
                 )
@@ -434,6 +509,7 @@ private fun CueApp(
                             accountBusy = true
                             try {
                                 activity.stopService(Intent(activity, FloatingCueService::class.java))
+                                activity.stopService(Intent(activity, ScreenInsightService::class.java))
                                 themeStore.setFloatingCue(false)
                                 auth.signOut()
                                 userId?.let {
@@ -470,6 +546,43 @@ private fun CueApp(
                         } else scope.launch { themeStore.setNotificationPanel(true) }
                     },
                     { value -> scope.launch { themeStore.setFloatingOpacity(value) } },
+                    dailyPlanEnabled, wakeMinute, bedMinute,
+                    { enable ->
+                        if (!enable) scope.launch { themeStore.setDailyPlanEnabled(false) }
+                        else if (Build.VERSION.SDK_INT >= 33 &&
+                            activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+                            PackageManager.PERMISSION_GRANTED) {
+                            pendingDayEnable = true
+                            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        } else if (!notificationsEnabled()) activity.startActivity(
+                            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                putExtra(Settings.EXTRA_APP_PACKAGE, activity.packageName)
+                            })
+                        } else scope.launch {
+                            themeStore.setDailyPlanEnabled(true)
+                            DailyPlanScheduler(activity).notifyToday()
+                        }
+                    },
+                    { wake, bed -> scope.launch {
+                        if (wake in 0..1080 && bed in 480..1439 && bed - wake >= 360)
+                            themeStore.setDayHours(wake, bed)
+                        else controlMessage = "Choose a bedtime at least six hours after waking."
+                    } },
+                    { dayPlanOpen = true },
+                    screenRunning,
+                    {
+                        if (screenRunning) activity.stopService(Intent(activity, ScreenInsightService::class.java))
+                        else if (Build.VERSION.SDK_INT < 34) controlMessage =
+                            "Choose-one-app analysis needs Android 14 or later."
+                        else if (Build.VERSION.SDK_INT >= 33 &&
+                            activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+                            PackageManager.PERMISSION_GRANTED) {
+                            pendingScreenStart = true
+                            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        } else projectionLauncher.launch(
+                            activity.getSystemService(MediaProjectionManager::class.java)
+                                .createScreenCaptureIntent())
+                    },
                     padding
                 )
             }
@@ -478,6 +591,7 @@ private fun CueApp(
             actionSheetOpen = false
             dispatchShortcut(action)
         }
+        if (dayPlanOpen) DailyPlanSheet(items, wakeMinute, bedMinute) { dayPlanOpen = false }
     }
 }
 
@@ -518,6 +632,14 @@ private fun YouScreen(
     onFloating: (Boolean) -> Unit,
     onPanel: (Boolean) -> Unit,
     onOpacity: (Float) -> Unit,
+    dailyPlanEnabled: Boolean,
+    wakeMinute: Int,
+    bedMinute: Int,
+    onDailyPlan: (Boolean) -> Unit,
+    onDayHours: (Int, Int) -> Unit,
+    onViewDay: () -> Unit,
+    screenRunning: Boolean,
+    onScreenToggle: () -> Unit,
     padding: PaddingValues
 ) {
     Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(24.dp)) {
@@ -601,6 +723,89 @@ private fun YouScreen(
                 controlMessage?.let { Text(it, color = MaterialTheme.colorScheme.primary,
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(top = 12.dp)) }
+            }
+        }
+        Spacer(Modifier.height(32.dp))
+        Text("Daily schedule", style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(8.dp))
+        Text("Cue builds your day around fixed reminders and your waking hours.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(16.dp))
+        var editingDayHour by remember { mutableStateOf<String?>(null) }
+        Card(shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+            Column(Modifier.fillMaxWidth().padding(20.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Morning plan notification", fontWeight = FontWeight.SemiBold)
+                        Text("A fresh schedule when your day begins.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(checked = dailyPlanEnabled, onCheckedChange = onDailyPlan)
+                }
+                Spacer(Modifier.height(16.dp))
+                Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp)) {
+                    androidx.compose.material3.OutlinedButton(onClick = { editingDayHour = "wake" }) {
+                        Text("Morning · ${timeLabel(wakeMinute)}")
+                    }
+                    androidx.compose.material3.OutlinedButton(onClick = { editingDayHour = "bed" }) {
+                        Text("Bed · ${timeLabel(bedMinute)}")
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                Button(onClick = onViewDay) { Text("View today's schedule") }
+            }
+        }
+        editingDayHour?.let { which ->
+            key(which) {
+                val initial = if (which == "wake") wakeMinute else bedMinute
+                val picker = rememberTimePickerState(initialHour = initial / 60,
+                    initialMinute = initial % 60, is24Hour = false)
+                androidx.compose.material3.AlertDialog(
+                    onDismissRequest = { editingDayHour = null },
+                    title = { Text(if (which == "wake") "Morning starts" else "Bedtime") },
+                    text = { androidx.compose.material3.TimeInput(state = picker) },
+                    confirmButton = {
+                        androidx.compose.material3.TextButton(onClick = {
+                            val minute = picker.hour * 60 + picker.minute
+                            onDayHours(if (which == "wake") minute else wakeMinute,
+                                if (which == "bed") minute else bedMinute)
+                            editingDayHour = null
+                        }) { Text("Save") }
+                    }, dismissButton = {
+                        androidx.compose.material3.TextButton(onClick = { editingDayHour = null }) {
+                            Text("Cancel")
+                        }
+                    })
+            }
+        }
+        Spacer(Modifier.height(32.dp))
+        Text("Screen analysis", style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(8.dp))
+        Text("Choose one app to analyze during a session. Android asks for consent every time.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(16.dp))
+        Card(shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+            Column(Modifier.fillMaxWidth().padding(20.dp)) {
+                Text(if (screenRunning) "Analysis is active" else "Capture useful reminders",
+                    fontWeight = FontWeight.SemiBold)
+                Text("Select one app in Android's picker, not Entire screen. Cue samples text locally " +
+                    "and only adds reminders with a clear future time. No video is saved.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 7.dp, bottom = 15.dp))
+                Button(onClick = onScreenToggle, enabled = Build.VERSION.SDK_INT >= 34 || screenRunning) {
+                    Text(if (screenRunning) "Stop analysis" else "Choose app and start")
+                }
+                if (Build.VERSION.SDK_INT < 34) Text("Needs Android 14+ for app selection.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall)
             }
         }
         Spacer(Modifier.height(32.dp))

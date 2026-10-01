@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -30,6 +31,9 @@ class ThemeStore(private val context: Context) {
     private val floatingKey = booleanPreferencesKey("floating_cue")
     private val panelKey = booleanPreferencesKey("notification_panel")
     private val opacityKey = floatPreferencesKey("floating_opacity")
+    private val dayPlanKey = booleanPreferencesKey("daily_plan_enabled")
+    private val wakeKey = intPreferencesKey("wake_minute")
+    private val bedKey = intPreferencesKey("bed_minute")
     val mode: Flow<ThemePreference> = context.cuePreferences.data.map { preferences ->
         ThemePreference.entries.firstOrNull { it.name == preferences[themeKey] } ?: ThemePreference.SYSTEM
     }
@@ -41,6 +45,9 @@ class ThemeStore(private val context: Context) {
     val floatingOpacity: Flow<Float> = context.cuePreferences.data.map {
         (it[opacityKey] ?: 0.82f).coerceIn(0.35f, 1f)
     }
+    val dailyPlanEnabled: Flow<Boolean> = context.cuePreferences.data.map { it[dayPlanKey] ?: false }
+    val wakeMinute: Flow<Int> = context.cuePreferences.data.map { (it[wakeKey] ?: 420).coerceIn(0, 1080) }
+    val bedMinute: Flow<Int> = context.cuePreferences.data.map { (it[bedKey] ?: 1320).coerceIn(480, 1439) }
 
     suspend fun set(value: ThemePreference) {
         context.cuePreferences.edit { it[themeKey] = value.name }
@@ -60,5 +67,14 @@ class ThemeStore(private val context: Context) {
 
     suspend fun setFloatingOpacity(opacity: Float) {
         context.cuePreferences.edit { it[opacityKey] = opacity.coerceIn(0.35f, 1f) }
+    }
+
+    suspend fun setDailyPlanEnabled(enabled: Boolean) {
+        context.cuePreferences.edit { it[dayPlanKey] = enabled }
+    }
+
+    suspend fun setDayHours(wake: Int, bed: Int) {
+        require(wake in 0..1080 && bed in 480..1439 && bed - wake >= 360)
+        context.cuePreferences.edit { it[wakeKey] = wake; it[bedKey] = bed }
     }
 }

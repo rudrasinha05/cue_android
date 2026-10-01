@@ -25,4 +25,18 @@ class CaptureSuggestionsTest {
         assertNull(suggestedDue("Today at 8 am", clock))
         assertNull(suggestedDue("Bring 9 apples tomorrow", clock))
     }
+
+    @Test fun screenLinesCannotCombineUnrelatedDateAndTime() {
+        assertNull(confidentReminder("Tomorrow's events\n9 pm weather update", clock))
+        assertNull(confidentReminder("Pay today at 6 pm\nCall tomorrow at 9 pm", clock))
+        assertEquals("Pay bill today at 6 pm",
+            confidentReminder("Inbox\nPay bill today at 6 pm\nOther text", clock)?.title)
+    }
+
+    @Test fun passiveScreenTextDoesNotBecomeAReminder() {
+        assertNull(confidentReminder("Weather today at 6 pm", clock))
+        assertNull(confidentReminder("Today at 6 pm", clock))
+        assertEquals("Call mom tomorrow at 9 pm",
+            confidentReminder("Call mom tomorrow at 9 pm", clock)?.title)
+    }
 }

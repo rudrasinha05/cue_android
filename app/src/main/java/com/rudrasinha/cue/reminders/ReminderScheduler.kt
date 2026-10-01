@@ -17,6 +17,7 @@ import com.rudrasinha.cue.R
 import com.rudrasinha.cue.data.CommitmentEntity
 import com.rudrasinha.cue.data.CueDatabase
 import com.rudrasinha.cue.data.ReminderEventEntity
+import com.rudrasinha.cue.planning.DailyPlanScheduler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -100,7 +101,9 @@ class ReminderReceiver : BroadcastReceiver() {
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
                 val scheduler = ReminderScheduler(context)
-                if (intent.action == "com.rudrasinha.cue.REMIND" ||
+                if (intent.action == DailyPlanScheduler.ACTION) {
+                    DailyPlanScheduler(context).onAlarm()
+                } else if (intent.action == "com.rudrasinha.cue.REMIND" ||
                     intent.action == "com.rudrasinha.cue.REMIND_BACKUP") {
                     val id = intent.getStringExtra("id") ?: return@launch
                     val item = CueDatabase.get(context).commitments().byId(id) ?: return@launch
@@ -127,6 +130,7 @@ class ReminderReceiver : BroadcastReceiver() {
                     }
                 } else {
                     scheduler.restore()
+                    DailyPlanScheduler(context).sync()
                 }
             } finally {
                 result.finish()

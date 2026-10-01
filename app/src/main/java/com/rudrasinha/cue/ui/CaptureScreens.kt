@@ -30,11 +30,11 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import org.json.JSONObject
 
-private val night = Color(0xFF101017)
-private val purple = Color(0xFFB69CFF)
-private val pale = Color(0xFFF8F6FF)
-private val subdued = Color(0xFFADA9BA)
-private val panel = Color(0xFF20202A)
+private val night: Color @Composable get() = MaterialTheme.colorScheme.background
+private val purple: Color @Composable get() = MaterialTheme.colorScheme.primary
+private val pale: Color @Composable get() = MaterialTheme.colorScheme.onSurface
+private val subdued: Color @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
+private val panel: Color @Composable get() = MaterialTheme.colorScheme.surface
 private val dateFormat = DateTimeFormatter.ofPattern("d MMM yyyy · h:mm a")
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -77,7 +77,8 @@ fun AssistantActionSheet(onDismiss: () -> Unit, onAction: (CueAction) -> Unit) {
 fun CaptureHub(onVoice: () -> Unit, onDocument: () -> Unit, onQuick: () -> Unit,
     message: String?,
     modifier: Modifier = Modifier) {
-    Column(modifier.fillMaxSize().background(Brush.verticalGradient(listOf(night, Color(0xFF29243A), night)))
+    Column(modifier.fillMaxSize().background(Brush.verticalGradient(listOf(night,
+        MaterialTheme.colorScheme.primaryContainer.copy(alpha = .35f), night)))
         .verticalScroll(rememberScrollState()).padding(22.dp)) {
         Spacer(Modifier.height(16.dp))
         Text("Catch a thought.", color = pale, style = MaterialTheme.typography.headlineLarge,
@@ -85,7 +86,8 @@ fun CaptureHub(onVoice: () -> Unit, onDocument: () -> Unit, onQuick: () -> Unit,
         Text("Turn it into a reminder in a few taps.", color = subdued,
             modifier = Modifier.padding(top = 8.dp, bottom = 28.dp))
         message?.let { Text(it, color = purple, modifier = Modifier.padding(bottom = 12.dp)) }
-        Surface(shape = RoundedCornerShape(28.dp), color = Color(0xFF3A3154),
+        Surface(shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.primaryContainer,
             border = BorderStroke(1.dp, purple.copy(alpha = .55f))) {
             Column(Modifier.fillMaxWidth().padding(22.dp)) {
                 Icon(Icons.Filled.Mic, contentDescription = null, tint = purple,
@@ -96,7 +98,8 @@ fun CaptureHub(onVoice: () -> Unit, onDocument: () -> Unit, onQuick: () -> Unit,
                 Text("Speak a reminder, then check the words and choose an alert.",
                     color = subdued, modifier = Modifier.padding(vertical = 10.dp))
                 Button(onClick = onVoice, colors = ButtonDefaults.buttonColors(
-                    containerColor = purple, contentColor = night)) { Text("Talk to Cue") }
+                    containerColor = purple,
+                    contentColor = MaterialTheme.colorScheme.onPrimary)) { Text("Talk to Cue") }
             }
         }
         Spacer(Modifier.height(14.dp))
@@ -120,7 +123,7 @@ private fun CaptureOption(icon: ImageVector, title: String, subtitle: String, on
     Surface(onClick = onClick, shape = RoundedCornerShape(22.dp), color = panel,
         modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
-            Surface(shape = CircleShape, color = Color(0xFF393449)) {
+            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
                 Icon(icon, contentDescription = null, tint = purple,
                     modifier = Modifier.padding(12.dp).size(24.dp))
             }
@@ -153,7 +156,8 @@ fun HistoryScreen(events: List<ReminderEventEntity>, sources: List<SourceEntity>
                 it.title.orEmpty().contains(query, true) || it.excerpt.orEmpty().contains(query, true)
             }
     }
-    Column(modifier.fillMaxSize().background(Brush.verticalGradient(listOf(night, Color(0xFF29243A), night)))
+    Column(modifier.fillMaxSize().background(Brush.verticalGradient(listOf(night,
+        MaterialTheme.colorScheme.primaryContainer.copy(alpha = .35f), night)))
         .verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
         Spacer(Modifier.height(20.dp))
         Text("Your history", color = pale, fontWeight = FontWeight.Bold,
@@ -161,7 +165,7 @@ fun HistoryScreen(events: List<ReminderEventEntity>, sources: List<SourceEntity>
         Text("Every change and where a reminder came from.", color = subdued,
             modifier = Modifier.padding(top = 7.dp, bottom = 20.dp))
         if (archived.any { it.isFailure }) Text("Some older history needs repair. Sync your account and try again.",
-            color = Color(0xFFFFC76B), modifier = Modifier.padding(bottom = 12.dp))
+            color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.padding(bottom = 12.dp))
         OutlinedTextField(query, { query = it }, singleLine = true,
             placeholder = { Text("Search titles, changes or sources") },
             leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
@@ -232,7 +236,7 @@ fun HistoryScreen(events: List<ReminderEventEntity>, sources: List<SourceEntity>
                             }
                         }
                         if (sourceError) Text("Original isn't available here. The saved excerpt is above.",
-                            color = Color(0xFFFFC76B))
+                            color = MaterialTheme.colorScheme.tertiary)
                     }
                 }
             }, confirmButton = { TextButton(onClick = { selected = null }) { Text("Close") } })
