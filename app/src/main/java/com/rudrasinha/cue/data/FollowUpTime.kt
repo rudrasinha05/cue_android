@@ -1,7 +1,6 @@
 package com.rudrasinha.cue.data
 
 import java.time.Instant
-import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
 
@@ -12,7 +11,7 @@ object FollowUpTime {
         val preferred = previousDueMillis?.let {
             Instant.ofEpochMilli(it).atZone(zone).toLocalTime()
         } ?: LocalTime.of(9, 0)
-        val target = LocalDate.ofInstant(Instant.ofEpochMilli(nowMillis), zone)
+        val target = Instant.ofEpochMilli(nowMillis).atZone(zone).toLocalDate()
             .plusDays(days).atTime(preferred.hour, preferred.minute)
             .atZone(zone).toInstant().toEpochMilli()
         require(target > nowMillis)
