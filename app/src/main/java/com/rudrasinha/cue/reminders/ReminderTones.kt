@@ -12,6 +12,7 @@ data class ReminderTone(val id: String, val label: String, val resource: Int? = 
 /** Channel IDs stay stable because Android freezes a channel's sound after creation. */
 object ReminderTones {
     const val DEFAULT = "default"
+    const val ALARM_CHANNEL = "cue_alarm_v1"
     val choices = listOf(
         ReminderTone(DEFAULT, "System default"),
         ReminderTone("01", "Dawn", R.raw.cue_tone_01),
@@ -39,6 +40,19 @@ object ReminderTones {
     fun selected(id: String): ReminderTone = choices.firstOrNull { it.id == id } ?: choices.first()
     fun channelId(id: String): String = selected(id).let { tone ->
         if (tone.resource == null) "cue_reminders" else "cue_reminders_tone_${tone.id}"
+    }
+
+    fun ensureAlarmChannel(context: Context): String {
+        val manager = context.getSystemService(NotificationManager::class.java)
+        if (manager.getNotificationChannel(ALARM_CHANNEL) == null) {
+            manager.createNotificationChannel(NotificationChannel(ALARM_CHANNEL,
+                "Cue reminder alarms", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "Reminder alerts with Snooze and Dismiss controls"
+                setSound(null, null) // The playback service owns ten-second, per-reminder audio.
+                enableVibration(true)
+            })
+        }
+        return ALARM_CHANNEL
     }
 
     fun ensureChannel(context: Context, id: String): String {

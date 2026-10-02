@@ -91,3 +91,5 @@ create policy reminder_events_insert on public.reminder_events
 revoke all on public.reminder_events from anon;
 grant select, insert on public.reminder_events to authenticated;
 ```
+
+Additive migration `cue_per_reminder_tone` on 2026-10-02: `commitments.tone_id text not null default 'default'`, constrained to `default` or `01`–`20`. Existing reminder rows receive `default`; owner RLS policies remain unchanged.

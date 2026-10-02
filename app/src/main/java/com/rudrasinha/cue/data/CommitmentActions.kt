@@ -2,6 +2,7 @@ package com.rudrasinha.cue.data
 
 import androidx.room.withTransaction
 import com.rudrasinha.cue.reminders.ReminderScheduler
+import com.rudrasinha.cue.reminders.ReminderTones
 import org.json.JSONObject
 import java.time.ZoneId
 import java.util.UUID
@@ -22,7 +23,7 @@ class CommitmentActions(
     private val dao get() = database.commitments()
 
     suspend fun save(ownerId: String, id: String?, title: String, details: String?, dueAt: Long?,
-        origin: CaptureOrigin = CaptureOrigin("manual")): Boolean {
+        origin: CaptureOrigin = CaptureOrigin("manual"), toneId: String = ReminderTones.DEFAULT): Boolean {
         require(title.isNotBlank()) { "Add a title." }
         require(dueAt == null || dueAt > System.currentTimeMillis()) { "Choose a future time." }
         val old = id?.let { dao.byId(it) }
@@ -33,7 +34,7 @@ class CommitmentActions(
             title = title.trim(), details = details?.trim()?.ifBlank { null },
             dueAtMillis = dueAt, timezone = ZoneId.systemDefault().id, status = "active",
             updatedAtMillis = maxOf(now, (old?.updatedAtMillis ?: 0L) + 1),
-            dirty = ownerId != "guest"
+            dirty = ownerId != "guest", toneId = ReminderTones.selected(toneId).id
         )
         database.withTransaction {
             dao.upsert(listOf(item))
@@ -45,6 +46,7 @@ class CommitmentActions(
             ))
             database.history().insertEvent(event(item, if (old == null) "created" else "updated"))
         }
+        if (old != null) scheduler.silence(old)
         scheduler.schedule(item)
         return sync(ownerId)
     }
@@ -117,6 +119,7 @@ class CommitmentActions(
             dao.upsert(listOf(next))
             database.history().insertEvent(event(next, type))
         }
+        scheduler.silence(old)
         scheduler.schedule(next)
         return sync(ownerId)
     }
@@ -131,7 +134,7 @@ class CommitmentActions(
         val id = UUID.randomUUID().toString()
         val snapshot = JSONObject().put("title", item.title).put("status", item.status)
             .put("details", item.details).put("due_at_millis", item.dueAtMillis)
-            .put("timezone", item.timezone).toString()
+            .put("timezone", item.timezone).put("tone_id", item.toneId).toString()
         return ReminderEventEntity(id, item.ownerId, item.id, type, snapshot, "app", id,
             item.updatedAtMillis, item.ownerId != "guest")
     }

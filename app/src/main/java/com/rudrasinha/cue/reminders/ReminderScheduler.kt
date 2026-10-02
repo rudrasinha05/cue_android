@@ -11,14 +11,11 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
-import com.rudrasinha.cue.MainActivity
 import com.rudrasinha.cue.R
 import com.rudrasinha.cue.data.CommitmentEntity
 import com.rudrasinha.cue.data.CueDatabase
 import com.rudrasinha.cue.data.ReminderEventEntity
 import com.rudrasinha.cue.planning.DailyPlanScheduler
-import com.rudrasinha.cue.settings.ThemeStore
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -41,6 +38,14 @@ class ReminderScheduler(private val context: Context) {
     }
 
     fun exactAvailable(): Boolean = Build.VERSION.SDK_INT < 31 || alarms.canScheduleExactAlarms()
+
+    fun silence(item: CommitmentEntity) {
+        context.getSystemService(NotificationManager::class.java).cancel(item.id.hashCode())
+        runCatching { context.startService(Intent(context, AlarmPlaybackService::class.java).apply {
+            action = AlarmPlaybackService.ACTION_STOP
+            putExtra(AlarmPlaybackService.EXTRA_ID, item.id)
+        }) }
+    }
 
     fun cancel(item: CommitmentEntity) {
         alarms.cancel(pending(item.id, item.dueAtMillis ?: 0L, PRIMARY))
@@ -65,7 +70,7 @@ class ReminderScheduler(private val context: Context) {
     }
 
     suspend fun cancelOwner(id: String) {
-        CueDatabase.get(context).commitments().ownerAlarms(id).forEach(::cancel)
+        CueDatabase.get(context).commitments().ownerAlarms(id).forEach { cancel(it); silence(it) }
     }
 
     suspend fun restore() {
@@ -110,10 +115,9 @@ class ReminderReceiver : BroadcastReceiver() {
                     val item = CueDatabase.get(context).commitments().byId(id) ?: return@launch
                     if (item.status != "active" || item.dueAtMillis != intent.getLongExtra("due", -1L)) return@launch
                     if (item.ownerId != "guest" && item.ownerId != scheduler.activeOwnerId()) return@launch
-                    val toneId = ThemeStore(context).reminderTone.first()
                     var delivered = false
                     synchronized(deliveryLock) {
-                        if (!scheduler.wasDelivered(item) && showNotification(context, item, toneId)) {
+                        if (!scheduler.wasDelivered(item) && showNotification(context, item)) {
                             scheduler.markDelivered(item)
                             delivered = true
                         }
@@ -140,23 +144,51 @@ class ReminderReceiver : BroadcastReceiver() {
         }
     }
 
-    private fun showNotification(context: Context, item: CommitmentEntity, toneId: String): Boolean {
+    private fun showNotification(context: Context, item: CommitmentEntity): Boolean {
         if (Build.VERSION.SDK_INT >= 33 &&
             context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return false
         val manager = context.getSystemService(NotificationManager::class.java)
-        val channelId = ReminderTones.ensureChannel(context, toneId)
+        val channelId = ReminderTones.ensureAlarmChannel(context)
         if (!manager.areNotificationsEnabled() ||
             manager.getNotificationChannel(channelId)?.importance == NotificationManager.IMPORTANCE_NONE) return false
-        val open = PendingIntent.getActivity(context, item.id.hashCode(),
-            Intent(context, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val open = Intent(context, AlarmActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra(AlarmPlaybackService.EXTRA_ID, item.id)
+            putExtra("due", item.dueAtMillis)
+        }
+        val fullScreen = PendingIntent.getActivity(context, item.id.hashCode(), open,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        fun action(name: String, code: Int): PendingIntent = PendingIntent.getBroadcast(context,
+            item.id.hashCode() xor code, Intent(context, AlarmActionReceiver::class.java).apply {
+                action = name
+                data = Uri.parse("cue://alarm/${item.id}/$name")
+                putExtra(AlarmPlaybackService.EXTRA_ID, item.id)
+                putExtra("due", item.dueAtMillis)
+            }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val notice = Notification.Builder(context, channelId)
             .setSmallIcon(R.drawable.ic_cue_foreground)
             .setContentTitle(item.title)
-            .setContentText(item.details?.takeIf { it.isNotBlank() } ?: "It's time for your reminder.")
-            .setContentIntent(open)
-            .setAutoCancel(true)
-            .build()
-        return try { manager.notify(item.id.hashCode(), notice); true }
-        catch (_: SecurityException) { false }
+            .setContentText("Reminder ringing · Snooze or dismiss")
+            .setCategory(Notification.CATEGORY_ALARM)
+            .setPriority(Notification.PRIORITY_HIGH)
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
+            .setContentIntent(fullScreen)
+            .setFullScreenIntent(fullScreen, true)
+            .addAction(android.R.drawable.ic_lock_idle_alarm, "Snooze 10 min",
+                action(AlarmActionReceiver.SNOOZE, 11))
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Dismiss",
+                action(AlarmActionReceiver.DISMISS, 12))
+            .setOngoing(true).build()
+        return try {
+            manager.notify(item.id.hashCode(), notice)
+            try {
+                context.startForegroundService(Intent(context, AlarmPlaybackService::class.java).apply {
+                    action = AlarmPlaybackService.ACTION_PLAY
+                    putExtra(AlarmPlaybackService.EXTRA_ID, item.id)
+                    putExtra(AlarmPlaybackService.EXTRA_TONE, item.toneId)
+                })
+            } catch (_: RuntimeException) { /* Alarm controls remain available in notification. */ }
+            true
+        } catch (_: SecurityException) { false }
     }
 }

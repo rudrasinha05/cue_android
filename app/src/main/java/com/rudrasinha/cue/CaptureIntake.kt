@@ -16,6 +16,8 @@ import com.rudrasinha.cue.data.CommitmentActions
 import com.rudrasinha.cue.data.CueDatabase
 import com.rudrasinha.cue.data.ReminderMatch
 import com.rudrasinha.cue.reminders.ReminderScheduler
+import com.rudrasinha.cue.settings.ThemeStore
+import kotlinx.coroutines.flow.first
 import java.security.MessageDigest
 import java.time.Instant
 import java.time.ZoneId
@@ -49,6 +51,7 @@ class CaptureIntake(private val context: Context) {
         val due = candidate.dueAtMillis
         val ownerId = ReminderScheduler(context).activeOwnerId() ?: "guest"
         val database = CueDatabase.get(context)
+        val defaultTone = ThemeStore(context).reminderTone.first()
         val result = saveLock.withLock {
             val key = MessageDigest.getInstance("SHA-256").digest(
                 "${title.lowercase()}|$due|${content.lowercase()}".toByteArray(Charsets.UTF_8))
@@ -63,7 +66,7 @@ class CaptureIntake(private val context: Context) {
                 if (actions.linkSource(ownerId, existing.id, origin)) "Source linked to reminder"
                 else "Already saved"
             } else {
-                val synced = actions.save(ownerId, null, title, details, due, origin)
+                val synced = actions.save(ownerId, null, title, details, due, origin, defaultTone)
                 if (synced) "Reminder added" else "Saved on this device"
             }
         }

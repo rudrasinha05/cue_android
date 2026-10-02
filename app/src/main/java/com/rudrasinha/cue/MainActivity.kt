@@ -274,7 +274,7 @@ private fun CueApp(
         return granted && manager.areNotificationsEnabled() &&
             channel?.importance != NotificationManager.IMPORTANCE_NONE
     }
-    fun notificationsEnabled() = channelNotificationsEnabled(ReminderTones.channelId(reminderTone))
+    fun notificationsEnabled() = channelNotificationsEnabled(ReminderTones.ALARM_CHANNEL)
     fun captureNotificationsEnabled() = channelNotificationsEnabled("cue_capture")
     fun dayNotificationsEnabled() = channelNotificationsEnabled("cue_day_plan")
     fun screenNotificationsEnabled() = channelNotificationsEnabled("cue_screen")
@@ -477,8 +477,9 @@ private fun CueApp(
                             putExtra(Settings.EXTRA_APP_PACKAGE, activity.packageName)
                         })
                     },
-                    { id, title, details, due, origin ->
-                        perform("Reminder saved.") { actions.save(ownerId, id, title, details, due, origin) }
+                    reminderTone,
+                    { id, title, details, due, origin, tone ->
+                        perform("Reminder saved.") { actions.save(ownerId, id, title, details, due, origin, tone) }
                         if (due != null && Build.VERSION.SDK_INT >= 33 &&
                             activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -586,6 +587,14 @@ private fun CueApp(
                         } else scope.launch { themeStore.setNotificationPanel(true) }
                     },
                     { value -> scope.launch { themeStore.setFloatingOpacity(value) } },
+                    Build.VERSION.SDK_INT < 34 || activity.getSystemService(NotificationManager::class.java)
+                        .canUseFullScreenIntent(),
+                    {
+                        if (Build.VERSION.SDK_INT >= 34) runCatching {
+                            activity.startActivity(Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
+                                Uri.parse("package:${activity.packageName}")))
+                        }.onFailure { controlMessage = "Alarm popup settings aren't available on this device." }
+                    },
                     reminderTone, { tone ->
                         scope.launch {
                             ReminderTones.ensureChannel(activity, tone)
@@ -682,6 +691,8 @@ private fun YouScreen(
     onFloating: (Boolean) -> Unit,
     onPanel: (Boolean) -> Unit,
     onOpacity: (Float) -> Unit,
+    fullScreenAllowed: Boolean,
+    onFullScreenAccess: () -> Unit,
     reminderTone: String,
     onReminderTone: (String) -> Unit,
     dailyPlanEnabled: Boolean,
@@ -779,6 +790,18 @@ private fun YouScreen(
         }
         Spacer(Modifier.height(32.dp))
         ReminderTonePicker(reminderTone, onReminderTone)
+        Spacer(Modifier.height(16.dp))
+        if (!fullScreenAllowed) Card(shape = RoundedCornerShape(22.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+            Column(Modifier.fillMaxWidth().padding(18.dp)) {
+                Text("Alarm popup access", fontWeight = FontWeight.SemiBold)
+                Text("Allow full-screen alerts for the alarm page. Snooze and Dismiss remain in the notification if this is off.",
+                    style = MaterialTheme.typography.bodySmall)
+                androidx.compose.material3.TextButton(onClick = onFullScreenAccess) {
+                    Text("Open Android settings")
+                }
+            }
+        }
         Spacer(Modifier.height(32.dp))
         Text("Daily schedule", style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.SemiBold)

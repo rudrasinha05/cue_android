@@ -35,6 +35,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.rudrasinha.cue.data.CommitmentEntity
 import com.rudrasinha.cue.data.CaptureOrigin
+import com.rudrasinha.cue.reminders.ReminderTones
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -58,7 +59,7 @@ private val dayFormat = DateTimeFormatter.ofPattern("EEEE, d MMMM")
 private enum class ReminderView(val label: String, val icon: ImageVector) {
     TODAY("Today", Icons.Filled.CalendarMonth),
     SCHEDULED("Scheduled", Icons.Filled.Schedule),
-    PAST("Past", Icons.Filled.History),
+    PAST("Overdue", Icons.Filled.History),
     NO_ALERT("No alert", Icons.Filled.NotificationsOff),
     COMPLETED("Completed", Icons.Filled.CheckCircle),
     ALL("All", Icons.Filled.ViewAgenda)
@@ -80,7 +81,7 @@ fun CommitmentListScreen(
     active: List<CommitmentEntity>, completed: List<CommitmentEntity>, upcoming: Boolean,
     message: String?, exactAvailable: Boolean, notificationsAllowed: Boolean,
     onExactAccess: () -> Unit, onNotificationAccess: () -> Unit,
-    onSave: (String?, String, String?, Long?, CaptureOrigin) -> Unit,
+    defaultTone: String, onSave: (String?, String, String?, Long?, CaptureOrigin, String) -> Unit,
     onComplete: (String) -> Unit, onSnooze: (String) -> Unit,
     onFollowUp: (String, Long) -> Unit, onArchive: (String) -> Unit,
     onDelete: (String) -> Unit,
@@ -283,7 +284,7 @@ fun CommitmentListScreen(
                     }, onAdd = { openEditor() })
                 } else {
                     val sections = if (!upcoming && selectedView == ReminderView.ALL) listOf(
-                        "PAST" to visibleItems.filter { (it.dueAtMillis ?: Long.MAX_VALUE) < now },
+                        "OVERDUE" to visibleItems.filter { (it.dueAtMillis ?: Long.MAX_VALUE) < now },
                         "TODAY" to visibleItems.filter { dateOf(it) == today &&
                             (it.dueAtMillis ?: 0L) >= now },
                         "COMING UP" to visibleItems.filter { dateOf(it)?.isAfter(today) == true },
@@ -328,9 +329,9 @@ fun CommitmentListScreen(
     }
 
     if (editorOpen) key(draftId) { ReminderEditor(editing, draftTitle, draftDetails, draftDue, draftId,
-        if (upcoming) selectedDate else today,
-        onDismiss = { editorOpen = false; if (externalDraft != null) onCaptureDismiss() }) { title, details, due ->
-        onSave(editing?.id, title, details, due, draftOrigin)
+        if (upcoming) selectedDate else today, defaultTone,
+        onDismiss = { editorOpen = false; if (externalDraft != null) onCaptureDismiss() }) { title, details, due, tone ->
+        onSave(editing?.id, title, details, due, draftOrigin, tone)
         editorOpen = false
         if (externalDraft != null) onCaptureDismiss()
     } }
@@ -454,7 +455,7 @@ private fun ReminderCard(item: CommitmentEntity, now: Long, completed: Boolean,
     val label = when {
         completed -> "Completed"
         item.dueAtMillis == null -> "Anytime"
-        item.dueAtMillis < now -> "Past · ${formatTime(item.dueAtMillis)}"
+        item.dueAtMillis < now -> "Overdue · ${formatTime(item.dueAtMillis)}"
         else -> formatTime(item.dueAtMillis)
     }
     Surface(shape = RoundedCornerShape(24.dp), color = cardColor,
@@ -597,8 +598,8 @@ private fun CalendarGrid(month: YearMonth, selectedDate: LocalDate,
 @Composable
 private fun ReminderEditor(item: CommitmentEntity?, suggestedTitle: String, suggestedDetails: String,
     suggestedDue: Long?,
-    draftId: String, initialDate: LocalDate,
-    onDismiss: () -> Unit, onSave: (String, String?, Long?) -> Unit) {
+    draftId: String, initialDate: LocalDate, defaultTone: String,
+    onDismiss: () -> Unit, onSave: (String, String?, Long?, String) -> Unit) {
     val initialDue = (item?.dueAtMillis ?: suggestedDue)?.let {
         Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault())
     }
@@ -606,6 +607,8 @@ private fun ReminderEditor(item: CommitmentEntity?, suggestedTitle: String, sugg
     val startDate = maxOf(initialDate, suggestedStart.toLocalDate())
     var title by remember(item?.id, draftId) { mutableStateOf(item?.title ?: suggestedTitle) }
     var details by remember(item?.id, draftId) { mutableStateOf(item?.details ?: suggestedDetails) }
+    var chosenTone by remember(item?.id, draftId) { mutableStateOf(item?.toneId ?: defaultTone) }
+    var tonePickerOpen by remember { mutableStateOf(false) }
     var alertEnabled by remember(item?.id) { mutableStateOf(initialDue != null) }
     var chosenDate by remember(item?.id) { mutableStateOf(initialDue?.toLocalDate() ?: startDate) }
     var month by remember(item?.id) { mutableStateOf(YearMonth.from(chosenDate)) }
@@ -649,7 +652,7 @@ private fun ReminderEditor(item: CommitmentEntity?, suggestedTitle: String, sugg
                             }
                         })
                     Spacer(Modifier.width(14.dp))
-                    IconButton(onClick = { onSave(title.trim(), details.trim().ifBlank { null }, due) },
+                    IconButton(onClick = { onSave(title.trim(), details.trim().ifBlank { null }, due, chosenTone) },
                         enabled = valid,
                         modifier = Modifier.size(52.dp).background(
                             if (valid) violet else MaterialTheme.colorScheme.outlineVariant, CircleShape)) {
@@ -687,6 +690,23 @@ private fun ReminderEditor(item: CommitmentEntity?, suggestedTitle: String, sugg
                                 tint = muted, modifier = Modifier.size(18.dp))
                         }
                     }
+                    Surface(onClick = { tonePickerOpen = true; focusManager.clearFocus(); keyboard?.hide() },
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        modifier = Modifier.fillMaxWidth().padding(top = 9.dp)) {
+                        Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Filled.MusicNote, contentDescription = null, tint = violet,
+                                modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(10.dp))
+                            Text("Sound · ${ReminderTones.selected(chosenTone).label}", color = ivory,
+                                style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                            Icon(Icons.Filled.ChevronRight, contentDescription = "Choose reminder sound",
+                                tint = muted, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                    if (tonePickerOpen) ReminderToneChoices(chosenTone, onSelect = { chosenTone = it },
+                        onDismiss = { tonePickerOpen = false })
                     if (showCalendar) {
                         Spacer(Modifier.height(14.dp))
                         CalendarGrid(month, chosenDate, emptyMap(),

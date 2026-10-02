@@ -40,26 +40,10 @@ import com.rudrasinha.cue.reminders.ReminderTones
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReminderTonePicker(selected: String, onSelect: (String) -> Unit) {
-    val context = LocalContext.current
     var open by remember { mutableStateOf(false) }
-    var player by remember { mutableStateOf<MediaPlayer?>(null) }
-    DisposableEffect(Unit) { onDispose { player?.release() } }
-    fun play(tone: ReminderTone) {
-        player?.release()
-        player = runCatching {
-            if (tone.resource != null) MediaPlayer.create(context, tone.resource)
-            else MediaPlayer().apply {
-                setDataSource(context, RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION))
-                prepare()
-            }
-        }.getOrNull()?.also { sound ->
-            sound.setOnCompletionListener { it.reset() }
-            runCatching { sound.start() }
-        }
-    }
-    Text("Reminder sound", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+    Text("Default reminder sound", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
     Spacer(Modifier.height(8.dp))
-    Text("Choose a sound for new reminder alerts. Preview each one before picking.",
+    Text("New manual and AI reminders start with this sound. You can change each reminder separately.",
         color = MaterialTheme.colorScheme.onSurfaceVariant)
     Spacer(Modifier.height(16.dp))
     Card(shape = RoundedCornerShape(24.dp),
@@ -76,7 +60,30 @@ fun ReminderTonePicker(selected: String, onSelect: (String) -> Unit) {
             Button(onClick = { open = true }) { Text("Choose") }
         }
     }
-    if (open) ModalBottomSheet(onDismissRequest = { open = false }) {
+    if (open) ReminderToneChoices(selected, onSelect, onDismiss = { open = false })
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ReminderToneChoices(selected: String, onSelect: (String) -> Unit,
+    onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    var player by remember { mutableStateOf<MediaPlayer?>(null) }
+    DisposableEffect(Unit) { onDispose { player?.release() } }
+    fun play(tone: ReminderTone) {
+        player?.release()
+        player = runCatching {
+            if (tone.resource != null) MediaPlayer.create(context, tone.resource)
+            else MediaPlayer().apply {
+                setDataSource(context, RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION))
+                prepare()
+            }
+        }.getOrNull()?.also { sound ->
+            sound.setOnCompletionListener { it.reset() }
+            runCatching { sound.start() }
+        }
+    }
+    ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.padding(horizontal = 24.dp)) {
             Text("Choose reminder sound", style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold)
