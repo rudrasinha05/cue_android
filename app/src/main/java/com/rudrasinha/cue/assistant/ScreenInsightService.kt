@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.app.KeyguardManager
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
@@ -25,8 +26,10 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.rudrasinha.cue.CaptureIntake
+import com.rudrasinha.cue.ScreenReminderCandidate
 import com.rudrasinha.cue.R
 import java.util.concurrent.atomic.AtomicBoolean
+import java.security.MessageDigest
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -52,7 +55,7 @@ class ScreenInsightService : Service() {
     private var display: VirtualDisplay? = null
     private var reader: ImageReader? = null
     private var lastSample = 0L
-    private var lastText = ""
+    private var lastCandidateFingerprint = ""
     @Volatile private var stopping = false
     private val callback = object : MediaProjection.Callback() {
         override fun onStop() { stopSelf() }
@@ -94,7 +97,7 @@ class ScreenInsightService : Service() {
             }
         } catch (e: Exception) {
             CaptureIntake(applicationContext).failure(
-                e.message ?: "Screen analysis could not start. Try selecting one app again.")
+                e.message ?: "Screen analysis could not start. Try sharing your screen again.")
             stopSelf()
         }
         return START_NOT_STICKY
@@ -109,7 +112,7 @@ class ScreenInsightService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         return Notification.Builder(this, "cue_screen")
             .setSmallIcon(R.drawable.ic_cue_foreground)
-            .setContentTitle("Cue is analyzing your selected app")
+            .setContentTitle("Cue is analyzing your shared screen")
             .setContentText("Local screen text analysis · tap Stop any time")
             .setOngoing(true)
             .setContentIntent(AssistantControls.shortcutIntent(this, CueAction.SETTINGS.key).let {
@@ -132,7 +135,7 @@ class ScreenInsightService : Service() {
         }
         val existing = display
         if (existing == null) {
-            display = projection?.createVirtualDisplay("Cue selected app", width, height,
+            display = projection?.createVirtualDisplay("Cue screen analysis", width, height,
                 resources.displayMetrics.densityDpi, DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
                 reader!!.surface, null, handler)
         } else {
@@ -144,7 +147,8 @@ class ScreenInsightService : Service() {
     private fun onFrame(source: ImageReader) {
         val image = runCatching { source.acquireLatestImage() }.getOrNull() ?: return
         val now = SystemClock.elapsedRealtime()
-        if (now - lastSample < 15_000 || !busy.compareAndSet(false, true)) {
+        if (getSystemService(KeyguardManager::class.java).isKeyguardLocked ||
+            now - lastSample < 15_000 || !busy.compareAndSet(false, true)) {
             image.close(); return
         }
         lastSample = now
@@ -162,10 +166,16 @@ class ScreenInsightService : Service() {
         work.launch {
             try {
                 val text = Tasks.await(recognizer.process(InputImage.fromBitmap(bitmap, 0)))
-                    .text.trim().take(4000)
-                if (text.isNotBlank() && text != lastText) {
-                    lastText = text
-                    CaptureIntake(applicationContext).accept(text, "screen", "Selected app screen")
+                    .text.take(8000)
+                val candidate = ScreenReminderCandidate.select(text)
+                if (candidate != null) {
+                    val digest = MessageDigest.getInstance("SHA-256")
+                        .digest(candidate.lowercase().toByteArray(Charsets.UTF_8))
+                        .joinToString("") { "%02x".format(it) }
+                    if (digest != lastCandidateFingerprint &&
+                        CaptureIntake(applicationContext).accept(candidate, "screen", "Shared screen")) {
+                        lastCandidateFingerprint = digest
+                    }
                 }
             } catch (_: Exception) { /* A later frame can still be analyzed. */ }
             finally { bitmap.recycle(); busy.set(false) }

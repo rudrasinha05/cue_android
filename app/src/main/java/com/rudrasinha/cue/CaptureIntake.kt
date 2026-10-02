@@ -30,14 +30,14 @@ class CaptureIntake(private val context: Context) {
     companion object { private val saveLock = Mutex() }
     private val notificationManager = context.getSystemService(NotificationManager::class.java)
 
-    suspend fun accept(text: String, type: String, titleHint: String? = null, uri: String? = null) {
+    suspend fun accept(text: String, type: String, titleHint: String? = null, uri: String? = null): Boolean {
         val content = text.trim().take(4000)
-        if (content.isEmpty()) { acknowledge("Nothing readable found", "Try sharing text or a clearer image."); return }
+        if (content.isEmpty()) { acknowledge("Nothing readable found", "Try sharing text or a clearer image."); return false }
         val candidate = LocalReminderInterpreter.find(content)
         val title = candidate?.title ?: content.lineSequence()
             .firstOrNull { it.isNotBlank() }?.trim()?.take(100) ?: "New reminder"
         if (candidate == null) {
-            if (type == "screen") return // Ignore uncertain background content without interrupting the user.
+            if (type == "screen") return false // Ignore uncertain background content without interrupting the user.
             acknowledge("Review a possible reminder", title,
                 Intent(context, MainActivity::class.java).apply {
                     action = Intent.ACTION_SEND
@@ -46,7 +46,7 @@ class CaptureIntake(private val context: Context) {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or
                         Intent.FLAG_ACTIVITY_SINGLE_TOP
                 })
-            return
+            return false
         }
         val due = candidate.dueAtMillis
         val ownerId = ReminderScheduler(context).activeOwnerId() ?: "guest"
@@ -73,6 +73,7 @@ class CaptureIntake(private val context: Context) {
         val label = Instant.ofEpochMilli(due).atZone(ZoneId.systemDefault())
             .format(DateTimeFormatter.ofPattern("d MMM · h:mm a"))
         acknowledge(result, "$title · $label")
+        return true
     }
 
     fun failure(message: String) = acknowledge("Cue couldn't read that item", message)

@@ -261,7 +261,7 @@ private fun CueApp(
                     putExtra(ScreenInsightService.EXTRA_RESULT, result.resultCode)
                     putExtra(ScreenInsightService.EXTRA_CONSENT, result.data)
                 })
-                controlMessage = "Analyzing the app you selected. Stop from Cue or the notification."
+                controlMessage = "Analyzing the screen you shared. Stop from Cue or the notification."
             } catch (e: RuntimeException) {
                 controlMessage = e.message ?: "Could not start screen analysis."
             }
@@ -633,7 +633,7 @@ private fun CueApp(
                     {
                         if (screenRunning) activity.stopService(Intent(activity, ScreenInsightService::class.java))
                         else if (Build.VERSION.SDK_INT < 34) controlMessage =
-                            "Choose-one-app analysis needs Android 14 or later."
+                            "Screen analysis needs Android 14 or later."
                         else if (Build.VERSION.SDK_INT >= 33 &&
                             activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
                             PackageManager.PERMISSION_GRANTED) {
@@ -880,24 +880,25 @@ private fun YouScreen(
         Text("Screen analysis", style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(8.dp))
-        Text("Choose one app to analyze during a session. Android asks for consent every time.",
+        Text("Choose what to share in Android's picker. Consent is required each session.",
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(16.dp))
         Card(shape = RoundedCornerShape(24.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
             Column(Modifier.fillMaxWidth().padding(20.dp)) {
-                Text(if (screenRunning) "Analysis is active" else "Capture useful reminders",
-                    fontWeight = FontWeight.SemiBold)
-                Text("Select one app in Android's picker, not Entire screen. Cue samples text locally " +
-                    "and only adds reminders with a clear future time. No video is saved.",
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(if (screenRunning) "Analysis is active" else "Analyze shared screen",
+                        modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                    Switch(checked = screenRunning, onCheckedChange = { onScreenToggle() },
+                        enabled = Build.VERSION.SDK_INT >= 34 || screenRunning)
+                }
+                Text("Choose Entire screen or one app in Android's picker. While enabled, Cue samples " +
+                    "text every 15 seconds and saves only clear future reminders. No video or full screen text is saved.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 7.dp, bottom = 15.dp))
-                Button(onClick = onScreenToggle, enabled = Build.VERSION.SDK_INT >= 34 || screenRunning) {
-                    Text(if (screenRunning) "Stop analysis" else "Choose app and start")
-                }
-                if (Build.VERSION.SDK_INT < 34) Text("Needs Android 14+ for app selection.",
+                    modifier = Modifier.padding(top = 7.dp))
+                if (Build.VERSION.SDK_INT < 34) Text("Needs Android 14+.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall)
             }
