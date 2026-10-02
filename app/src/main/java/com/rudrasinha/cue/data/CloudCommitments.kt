@@ -1,6 +1,7 @@
 package com.rudrasinha.cue.data
 
 import androidx.room.withTransaction
+import android.util.Base64
 import com.rudrasinha.cue.reminders.ReminderScheduler
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.from
@@ -51,6 +52,19 @@ private data class CloudEvent(
     @SerialName("occurred_at") val occurredAt: String
 )
 
+@Serializable
+private data class CloudHistoryBatch(
+    val id: String,
+    @SerialName("user_id") val userId: String,
+    @SerialName("first_at_millis") val firstAtMillis: Long,
+    @SerialName("last_at_millis") val lastAtMillis: Long,
+    @SerialName("event_count") val eventCount: Int,
+    val checksum: String,
+    @SerialName("payload_base64") val payloadBase64: String,
+    @SerialName("search_index") val searchIndex: String,
+    @SerialName("created_at_millis") val createdAtMillis: Long
+)
+
 class CloudCommitments(private val database: CueDatabase, private val client: SupabaseClient,
     private val scheduler: ReminderScheduler) {
     // The same UUID is used locally and remotely. Repeated sign-in safely retries the upload.
@@ -96,9 +110,18 @@ class CloudCommitments(private val database: CueDatabase, private val client: Su
         val remoteSources = client.from("sources").select {
             filter { eq("user_id", userId) }
         }.decodeList<CloudSource>()
+        val remoteBatches = client.from("history_batches").select {
+            filter { eq("user_id", userId) }
+        }.decodeList<CloudHistoryBatch>()
         val remoteEvents = client.from("reminder_events").select {
             filter { eq("user_id", userId) }
         }.decodeList<CloudEvent>()
+        // Verify a complete batch before exposing it or skipping its raw cloud events.
+        remoteBatches.forEach { record ->
+            val batch = record.toLocal(userId)
+            HistoryArchive.read(batch)
+            history.insertBatch(batch)
+        }
         val archivedIds = HistoryArchive(database).archivedIds(userId)
         database.withTransaction {
             remoteSources.forEach { history.insertSource(it.toLocal()) }
@@ -162,6 +185,17 @@ class CloudCommitments(private val database: CueDatabase, private val client: Su
         history.pendingEvents(userId).forEach { local ->
             insertEventIfAbsent(local.toCloud(userId))
             history.markEventSynced(userId, local.id)
+        }
+        HistoryArchive(database).compact(userId)
+        history.batches(userId).forEach { batch ->
+            val existing = client.from("history_batches").select {
+                filter { eq("id", batch.id); eq("user_id", userId) }
+            }.decodeList<CloudHistoryBatch>().singleOrNull()
+            if (existing == null) {
+                HistoryArchive.read(batch)
+                client.from("history_batches").insert(batch.toCloud(userId))
+            } else require(existing.checksum == batch.checksum &&
+                existing.eventCount == batch.eventCount) { "Cloud history archive differs from this device." }
         }
     }
 
@@ -232,3 +266,14 @@ private fun CloudEvent.toLocal() = ReminderEventEntity(
     id, userId, commitmentId, eventType, changeData.toString(), actor, idempotencyKey,
     Instant.parse(occurredAt).toEpochMilli()
 )
+
+private fun HistoryBatchEntity.toCloud(userId: String) = CloudHistoryBatch(
+    id, userId, firstAtMillis, lastAtMillis, eventCount, checksum,
+    Base64.encodeToString(payload, Base64.NO_WRAP), searchIndex, createdAtMillis
+)
+
+private fun CloudHistoryBatch.toLocal(expectedOwner: String): HistoryBatchEntity {
+    require(userId == expectedOwner) { "History belongs to another account." }
+    return HistoryBatchEntity(id, userId, firstAtMillis, lastAtMillis, eventCount, checksum,
+        Base64.decode(payloadBase64, Base64.DEFAULT), createdAtMillis, searchIndex)
+}
