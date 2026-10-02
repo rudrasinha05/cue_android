@@ -2,6 +2,7 @@ package com.rudrasinha.cue
 
 import android.app.Activity
 import android.app.NotificationManager
+import android.content.ComponentName
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -79,6 +80,7 @@ import com.rudrasinha.cue.assistant.AssistantControls
 import com.rudrasinha.cue.assistant.CueAction
 import com.rudrasinha.cue.assistant.FloatingCueService
 import com.rudrasinha.cue.assistant.ScreenInsightService
+import com.rudrasinha.cue.assistant.CueNotificationListener
 import com.rudrasinha.cue.data.CommitmentActions
 import com.rudrasinha.cue.data.CueDatabase
 import com.rudrasinha.cue.data.CloudCommitments
@@ -203,6 +205,7 @@ private fun CueApp(
     val floatingSize by themeStore.floatingSize.collectAsState(initial = 64)
     val screenRunning by ScreenInsightService.running.collectAsState()
     val dailyPlanEnabled by themeStore.dailyPlanEnabled.collectAsState(initial = false)
+    val notificationIntelligence by themeStore.notificationIntelligence.collectAsState(initial = false)
     val wakeMinute by themeStore.wakeMinute.collectAsState(initial = 420)
     val bedMinute by themeStore.bedMinute.collectAsState(initial = 1320)
     val session by auth.client.auth.sessionStatus.collectAsState(initial = SessionStatus.Initializing)
@@ -226,6 +229,7 @@ private fun CueApp(
     var pendingPanelEnable by remember { mutableStateOf(false) }
     var pendingDayEnable by remember { mutableStateOf(false) }
     var pendingScreenStart by remember { mutableStateOf(false) }
+    var pendingNotificationAccess by remember { mutableStateOf(false) }
     LaunchedEffect(captureDraft?.id) { if (captureDraft != null) selected = Tab.TODAY }
     var accountMessage by remember { mutableStateOf<String?>(null) }
     var accountBusy by remember { mutableStateOf(false) }
@@ -279,6 +283,9 @@ private fun CueApp(
     fun captureNotificationsEnabled() = channelNotificationsEnabled("cue_capture")
     fun dayNotificationsEnabled() = channelNotificationsEnabled("cue_day_plan")
     fun screenNotificationsEnabled() = channelNotificationsEnabled("cue_screen")
+    val listenerComponent = remember { ComponentName(activity, CueNotificationListener::class.java) }
+    val listenerAccess = activity.getSystemService(NotificationManager::class.java)
+        .isNotificationListenerAccessGranted(listenerComponent)
     var notificationAllowed by remember { mutableStateOf(notificationsEnabled()) }
     LaunchedEffect(permissionEpoch, reminderTone) { notificationAllowed = notificationsEnabled() }
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -341,6 +348,18 @@ private fun CueApp(
         if (panelEnabled && !AssistantControls.canPost(activity)) {
             themeStore.setNotificationPanel(false)
             controlMessage = "Notification shortcuts stopped because notifications are off."
+        }
+    }
+    LaunchedEffect(permissionEpoch, notificationIntelligence) {
+        if (pendingNotificationAccess && permissionEpoch > 0) {
+            pendingNotificationAccess = false
+            if (listenerAccess && captureNotificationsEnabled())
+                themeStore.setNotificationIntelligence(true)
+            else controlMessage = "Allow Cue notification access to enable deadline detection."
+        }
+        if (notificationIntelligence && !listenerAccess) {
+            themeStore.setNotificationIntelligence(false)
+            controlMessage = "Notification access was removed; suggestions are off."
         }
     }
 
@@ -647,6 +666,19 @@ private fun CueApp(
                             activity.getSystemService(MediaProjectionManager::class.java)
                                 .createScreenCaptureIntent())
                     },
+                    notificationIntelligence && listenerAccess,
+                    { enable ->
+                        if (!enable) scope.launch { themeStore.setNotificationIntelligence(false) }
+                        else if (!captureNotificationsEnabled()) {
+                            controlMessage = "Allow Cue notifications to receive reminder confirmations."
+                            activity.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                putExtra(Settings.EXTRA_APP_PACKAGE, activity.packageName)
+                            })
+                        } else if (!listenerAccess) {
+                            pendingNotificationAccess = true
+                            activity.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                        } else scope.launch { themeStore.setNotificationIntelligence(true) }
+                    },
                     padding
                 )
             }
@@ -710,6 +742,8 @@ private fun YouScreen(
     onViewDay: () -> Unit,
     screenRunning: Boolean,
     onScreenToggle: () -> Unit,
+    notificationIntelligence: Boolean,
+    onNotificationIntelligence: (Boolean) -> Unit,
     padding: PaddingValues
 ) {
     Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(24.dp)) {
@@ -901,6 +935,25 @@ private fun YouScreen(
                 if (Build.VERSION.SDK_INT < 34) Text("Needs Android 14+.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall)
+            }
+        }
+        Spacer(Modifier.height(32.dp))
+        Text("Notification reminders", style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(8.dp))
+        Card(shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+            Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Find deadlines in notifications", fontWeight = FontWeight.SemiBold)
+                    Text("Optional Android notification access. Clear future reminders are saved " +
+                        "and acknowledged; uncertain messages are ignored. Nothing is scanned while off.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(checked = notificationIntelligence,
+                    onCheckedChange = onNotificationIntelligence)
             }
         }
         Spacer(Modifier.height(32.dp))
