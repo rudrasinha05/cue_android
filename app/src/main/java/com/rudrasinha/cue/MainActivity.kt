@@ -86,6 +86,7 @@ import com.rudrasinha.cue.data.CueDatabase
 import com.rudrasinha.cue.data.CloudCommitments
 import com.rudrasinha.cue.data.CaptureOrigin
 import com.rudrasinha.cue.data.HistoryArchive
+import com.rudrasinha.cue.data.AccountData
 import com.rudrasinha.cue.auth.CueAuth
 import com.rudrasinha.cue.auth.signInErrorMessage
 import com.rudrasinha.cue.settings.ThemePreference
@@ -230,10 +231,27 @@ private fun CueApp(
     var pendingDayEnable by remember { mutableStateOf(false) }
     var pendingScreenStart by remember { mutableStateOf(false) }
     var pendingNotificationAccess by remember { mutableStateOf(false) }
+    var pendingExport by remember { mutableStateOf<ByteArray?>(null) }
     LaunchedEffect(captureDraft?.id) { if (captureDraft != null) selected = Tab.TODAY }
     var accountMessage by remember { mutableStateOf<String?>(null) }
     var accountBusy by remember { mutableStateOf(false) }
     var reminderMessage by remember { mutableStateOf<String?>(null) }
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        val payload = pendingExport
+        pendingExport = null
+        if (uri != null && payload != null) scope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    activity.contentResolver.openOutputStream(uri)?.use { it.write(payload) }
+                        ?: error("Could not open the export destination.")
+                }
+                accountMessage = "Cue data exported."
+            } catch (e: Exception) {
+                accountMessage = "Export failed: ${e.message ?: "could not write file"}"
+            } finally { accountBusy = false }
+        } else accountBusy = false
+    }
     val voiceLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val spoken = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
             ?.firstOrNull()?.trim()
@@ -579,6 +597,37 @@ private fun CueApp(
                             finally { accountBusy = false }
                         }
                     },
+                    {
+                        if (!accountBusy) scope.launch {
+                            accountBusy = true
+                            try {
+                                pendingExport = withContext(Dispatchers.IO) {
+                                    AccountData(database, scheduler, cloud).export(ownerId)
+                                }
+                                exportLauncher.launch("cue-export-${java.time.LocalDate.now()}.json")
+                            } catch (e: Exception) {
+                                pendingExport = null
+                                accountBusy = false
+                                accountMessage = "Export failed: ${e.message ?: "try again online"}"
+                            }
+                        }
+                    },
+                    {
+                        if (!accountBusy) scope.launch {
+                            accountBusy = true
+                            try {
+                                activity.stopService(Intent(activity, FloatingCueService::class.java))
+                                activity.stopService(Intent(activity, ScreenInsightService::class.java))
+                                themeStore.setFloatingCue(false)
+                                themeStore.setNotificationIntelligence(false)
+                                themeStore.setDailyPlanEnabled(false)
+                                AccountData(database, scheduler, cloud).delete(ownerId)
+                                accountMessage = "Your Cue reminders and history were deleted."
+                            } catch (e: Exception) {
+                                accountMessage = "Deletion failed: ${e.message ?: "try again online"}"
+                            } finally { accountBusy = false }
+                        }
+                    },
                     floatingEnabled, panelEnabled, floatingOpacity, floatingSize,
                     Settings.canDrawOverlays(activity), controlMessage,
                     { enable ->
@@ -723,6 +772,8 @@ private fun YouScreen(
     accountMessage: String?,
     onSignIn: () -> Unit,
     onSignOut: () -> Unit,
+    onExportData: () -> Unit,
+    onDeleteData: () -> Unit,
     floatingEnabled: Boolean,
     panelEnabled: Boolean,
     floatingOpacity: Float,
@@ -749,6 +800,7 @@ private fun YouScreen(
     onNotificationIntelligence: (Boolean) -> Unit,
     padding: PaddingValues
 ) {
+    var deleteDataPrompt by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(24.dp)) {
         Text("Your space", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(8.dp))
@@ -778,6 +830,13 @@ private fun YouScreen(
                     }
                 }
                 accountMessage?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
+                Spacer(Modifier.height(14.dp))
+                androidx.compose.material3.OutlinedButton(onClick = onExportData,
+                    enabled = !accountBusy) { Text("Export my Cue data") }
+                if (!signedIn) androidx.compose.material3.TextButton(
+                    onClick = { deleteDataPrompt = true }, enabled = !accountBusy) {
+                    Text("Delete reminders on this device")
+                }
             }
         }
         Spacer(Modifier.height(32.dp))
@@ -1011,4 +1070,15 @@ private fun YouScreen(
         }
         Spacer(Modifier.height(12.dp))
     }
+    if (deleteDataPrompt) androidx.compose.material3.AlertDialog(
+        onDismissRequest = { deleteDataPrompt = false },
+        title = { Text("Delete guest data?") },
+        text = { Text("This deletes guest reminders and history on this device. " +
+            "This cannot be undone.") },
+        confirmButton = { androidx.compose.material3.TextButton(onClick = {
+            deleteDataPrompt = false; onDeleteData()
+        }) { Text("Delete all") } },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = {
+            deleteDataPrompt = false
+        }) { Text("Cancel") } })
 }

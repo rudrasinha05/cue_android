@@ -16,6 +16,8 @@ The repository includes the Gradle wrapper, so no system Gradle installation is 
 
 ## M1 account setup
 
+In You, **Export my Cue data** saves a JSON copy of the current profile, including exact decoded history. Guest users can delete their local reminders and history after confirmation. Synced account deletion is still a release gate.
+
 See [Cue account setup](docs/M1_ACCOUNT_SETUP.md) for the Google Cloud and Supabase settings needed to enable the sign-in button and verify guest migration. The APK contains only Cue's public Supabase URL and publishable key; it never contains the Google client secret.
 
 ## Working agreement

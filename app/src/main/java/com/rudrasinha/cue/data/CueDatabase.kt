@@ -101,6 +101,12 @@ interface CommitmentDao {
     @Query("SELECT * FROM commitments WHERE ownerId = :ownerId AND status = 'active' AND dueAtMillis IS NOT NULL")
     suspend fun ownerAlarms(ownerId: String): List<CommitmentEntity>
 
+    @Query("SELECT * FROM commitments WHERE ownerId = :ownerId ORDER BY updatedAtMillis, id")
+    suspend fun allForOwner(ownerId: String): List<CommitmentEntity>
+
+    @Query("DELETE FROM commitments WHERE ownerId = :ownerId")
+    suspend fun deleteForOwner(ownerId: String)
+
     @Query("SELECT * FROM commitments WHERE ownerId = :ownerId AND dirty = 1 ORDER BY updatedAtMillis")
     suspend fun pending(ownerId: String): List<CommitmentEntity>
 
@@ -139,6 +145,21 @@ interface HistoryDao {
 
     @Query("SELECT * FROM history_batches WHERE ownerId = :ownerId")
     suspend fun batches(ownerId: String): List<HistoryBatchEntity>
+
+    @Query("SELECT * FROM sources WHERE ownerId = :ownerId ORDER BY capturedAtMillis, id")
+    suspend fun sourcesForOwner(ownerId: String): List<SourceEntity>
+
+    @Query("SELECT * FROM reminder_events WHERE ownerId = :ownerId ORDER BY occurredAtMillis, id")
+    suspend fun eventsForOwner(ownerId: String): List<ReminderEventEntity>
+
+    @Query("DELETE FROM sources WHERE ownerId = :ownerId")
+    suspend fun deleteSourcesForOwner(ownerId: String)
+
+    @Query("DELETE FROM reminder_events WHERE ownerId = :ownerId")
+    suspend fun deleteEventsForOwner(ownerId: String)
+
+    @Query("DELETE FROM history_batches WHERE ownerId = :ownerId")
+    suspend fun deleteBatchesForOwner(ownerId: String)
 
     @Query("SELECT * FROM reminder_events WHERE ownerId = :ownerId AND dirty = 0 AND occurredAtMillis < :cutoff ORDER BY occurredAtMillis, id LIMIT 100")
     suspend fun compactable(ownerId: String, cutoff: Long): List<ReminderEventEntity>
