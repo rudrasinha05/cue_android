@@ -171,6 +171,7 @@ fun HistoryScreen(events: List<ReminderEventEntity>, sources: List<SourceEntity>
     }
     fun eventLabel(event: ReminderEventEntity): String =
         if (event.eventType == "source_added") "Source added"
+        else if (event.eventType == "sync_conflict") "Earlier device edit saved"
         else event.eventType.replaceFirstChar { it.uppercase() }
 
     val allEvents = (events + openedEvents?.getOrDefault(emptyList()).orEmpty())
@@ -271,6 +272,9 @@ fun HistoryScreen(events: List<ReminderEventEntity>, sources: List<SourceEntity>
                 Column {
                     Text("${eventLabel(event)} · ${event.dateLabel()}")
                     val snapshot = event.snapshot()
+                    if (event.eventType == "sync_conflict") Text(
+                        "Another device had a newer edit. This history entry preserves the earlier version.",
+                        modifier = Modifier.padding(top = 10.dp))
                     snapshot.optString("details").takeIf { it.isNotBlank() && it != "null" }?.let {
                         Text(it, modifier = Modifier.padding(top = 10.dp))
                     }

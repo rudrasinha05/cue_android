@@ -57,7 +57,7 @@ class CaptureIntake(private val context: Context) {
                 "${title.lowercase()}|$due|${content.lowercase()}".toByteArray(Charsets.UTF_8))
                 .joinToString("") { "%02x".format(it) }
             val actions = CommitmentActions(database, ReminderScheduler(context),
-                CloudCommitments(database, CueAuth(context).client))
+                CloudCommitments(database, CueAuth(context).client, ReminderScheduler(context)))
             val details = if (type == "screen") null else content.take(2000)
             val excerpt = if (type == "screen") title else content.take(2000)
             val origin = CaptureOrigin(type, titleHint, excerpt, uri, key)

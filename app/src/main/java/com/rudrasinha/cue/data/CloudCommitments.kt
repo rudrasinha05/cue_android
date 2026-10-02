@@ -1,9 +1,12 @@
 package com.rudrasinha.cue.data
 
 import androidx.room.withTransaction
+import com.rudrasinha.cue.reminders.ReminderScheduler
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.from
 import java.time.Instant
+import java.util.UUID
+import org.json.JSONObject
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -48,13 +51,17 @@ private data class CloudEvent(
     @SerialName("occurred_at") val occurredAt: String
 )
 
-class CloudCommitments(private val database: CueDatabase, private val client: SupabaseClient) {
+class CloudCommitments(private val database: CueDatabase, private val client: SupabaseClient,
+    private val scheduler: ReminderScheduler) {
     // The same UUID is used locally and remotely. Repeated sign-in safely retries the upload.
     suspend fun restoreAndClaim(userId: String) {
         val dao = database.commitments()
         val history = database.history()
         dao.guestRecords().forEach { local ->
-            client.from("commitments").upsert(local.toCloud(userId))
+            val existing = client.from("commitments").select {
+                filter { eq("id", local.id); eq("user_id", userId) }
+            }.decodeList<CloudCommitment>()
+            if (existing.isEmpty()) client.from("commitments").insert(local.toCloud(userId))
         }
         history.guestSources().forEach { client.from("sources").upsert(it.toCloud(userId)) }
         history.guestEvents().forEach { insertEventIfAbsent(it.toCloud(userId)) }
@@ -69,10 +76,22 @@ class CloudCommitments(private val database: CueDatabase, private val client: Su
         val remote = client.from("commitments").select {
             filter { eq("user_id", userId) }
         }.decodeList<CloudCommitment>()
+        val rescheduled = mutableListOf<Pair<CommitmentEntity?, CommitmentEntity>>()
         database.withTransaction {
             remote.forEach { record ->
-                if (dao.byId(record.id)?.dirty != true) dao.upsert(listOf(record.toLocal()))
+                val old = dao.byId(record.id)
+                if (old?.dirty != true) {
+                    val next = record.toLocal()
+                    if (old != next) {
+                        dao.upsert(listOf(next))
+                        rescheduled += old to next
+                    }
+                }
             }
+        }
+        rescheduled.forEach { (old, next) ->
+            old?.let { scheduler.cancel(it); scheduler.silence(it) }
+            scheduler.schedule(next)
         }
         val remoteSources = client.from("sources").select {
             filter { eq("user_id", userId) }
@@ -91,8 +110,50 @@ class CloudCommitments(private val database: CueDatabase, private val client: Su
         val dao = database.commitments()
         val history = database.history()
         dao.pending(userId).forEach { local ->
-            client.from("commitments").upsert(local.toCloud(userId))
-            dao.markSynced(local.id, userId, local.updatedAtMillis)
+            val remote = client.from("commitments").select {
+                filter { eq("id", local.id); eq("user_id", userId) }
+            }.decodeList<CloudCommitment>().singleOrNull()
+            if (remote == null) {
+                client.from("commitments").insert(local.toCloud(userId))
+                dao.markSynced(local.id, userId, local.updatedAtMillis)
+            } else if (remote.matches(local)) {
+                dao.markSynced(local.id, userId, local.updatedAtMillis)
+            } else if (syncDecision(local.syncedAtMillis,
+                    Instant.parse(remote.updatedAt).toEpochMilli()) == SyncDecision.UPLOAD) {
+                val changed = client.from("commitments").update(local.toCloud(userId)) {
+                    select()
+                    filter {
+                        eq("id", local.id)
+                        eq("user_id", userId)
+                        eq("updated_at", remote.updatedAt)
+                    }
+                }.decodeList<CloudCommitment>()
+                if (changed.size != 1) error("Reminder changed on another device. Retry sync.")
+                dao.markSynced(local.id, userId, local.updatedAtMillis)
+            } else {
+                val key = "conflict:${local.id}:${local.updatedAtMillis}:${remote.updatedAt}"
+                val snapshot = JSONObject().put("title", local.title).put("status", local.status)
+                    .put("details", local.details).put("due_at_millis", local.dueAtMillis)
+                    .put("timezone", local.timezone).put("tone_id", local.toneId)
+                    .put("chain_enabled", local.chainEnabled)
+                    .put("winner_updated_at", remote.updatedAt).toString()
+                val applied = database.withTransaction {
+                    // A newer local edit can appear while the network request is in flight.
+                    if (dao.byId(local.id)?.updatedAtMillis == local.updatedAtMillis) {
+                        history.insertEvent(ReminderEventEntity(
+                            UUID.nameUUIDFromBytes(key.toByteArray(Charsets.UTF_8)).toString(),
+                            userId, local.id, "sync_conflict", snapshot, "sync", key,
+                            System.currentTimeMillis(), true))
+                        dao.upsert(listOf(remote.toLocal()))
+                        true
+                    } else false
+                }
+                if (applied) {
+                    scheduler.cancel(local)
+                    scheduler.silence(local)
+                    scheduler.schedule(remote.toLocal())
+                }
+            }
         }
         history.pendingSources(userId).forEach { local ->
             client.from("sources").upsert(local.toCloud(userId))
@@ -141,8 +202,16 @@ private fun CloudCommitment.toLocal() = CommitmentEntity(
     status = status,
     updatedAtMillis = Instant.parse(updatedAt).toEpochMilli(),
     toneId = toneId,
-    chainEnabled = chainEnabled
+    chainEnabled = chainEnabled,
+    syncedAtMillis = Instant.parse(updatedAt).toEpochMilli()
 )
+
+private fun CloudCommitment.matches(local: CommitmentEntity) =
+    title == local.title && details == local.details &&
+        dueAt?.let { Instant.parse(it).toEpochMilli() } == local.dueAtMillis &&
+        timezone == local.timezone && toneId == local.toneId &&
+        chainEnabled == local.chainEnabled && status == local.status &&
+        Instant.parse(updatedAt).toEpochMilli() == local.updatedAtMillis
 
 private fun SourceEntity.toCloud(userId: String) = CloudSource(
     id, userId, commitmentId, originType, originKey, title, excerpt, originalUri,

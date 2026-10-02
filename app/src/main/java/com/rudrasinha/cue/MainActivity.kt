@@ -157,7 +157,7 @@ class MainActivity : ComponentActivity() {
         val themeStore = ThemeStore(applicationContext)
         val database = CueDatabase.get(applicationContext)
         val auth = CueAuth(applicationContext)
-        val cloud = CloudCommitments(database, auth.client)
+        val cloud = CloudCommitments(database, auth.client, ReminderScheduler(applicationContext))
         setContent { CueApp(themeStore, database, auth, cloud, this, permissionEpoch,
             captureDraft, { captureDraft = null }, shortcutAction, ::consumeShortcut) }
     }

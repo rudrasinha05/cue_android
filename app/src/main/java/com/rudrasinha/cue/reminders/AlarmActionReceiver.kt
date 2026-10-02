@@ -39,7 +39,7 @@ class AlarmActionReceiver : BroadcastReceiver() {
                 }) }
                 when (intent.action) {
                     SNOOZE -> CommitmentActions(database, scheduler,
-                        CloudCommitments(database, CueAuth(context).client)).snooze(item.ownerId, id)
+                        CloudCommitments(database, CueAuth(context).client, scheduler)).snooze(item.ownerId, id)
                     DISMISS -> {
                         val key = "dismissed:$id:$due"
                         database.history().insertEvent(ReminderEventEntity(

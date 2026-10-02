@@ -35,7 +35,8 @@ class CommitmentActions(
             dueAtMillis = dueAt, timezone = ZoneId.systemDefault().id, status = "active",
             updatedAtMillis = maxOf(now, (old?.updatedAtMillis ?: 0L) + 1),
             dirty = ownerId != "guest", toneId = ReminderTones.selected(toneId).id,
-            chainEnabled = old?.chainEnabled ?: false
+            chainEnabled = old?.chainEnabled ?: false,
+            syncedAtMillis = old?.syncedAtMillis ?: 0L
         )
         database.withTransaction {
             dao.upsert(listOf(item))
