@@ -27,7 +27,8 @@ data class CommitmentEntity(
     val status: String,
     val updatedAtMillis: Long,
     @ColumnInfo(defaultValue = "0") val dirty: Boolean = false,
-    @ColumnInfo(defaultValue = "'default'") val toneId: String = "default"
+    @ColumnInfo(defaultValue = "'default'") val toneId: String = "default",
+    @ColumnInfo(defaultValue = "0") val chainEnabled: Boolean = false
 )
 
 @Entity(tableName = "sources", indices = [Index(value = ["ownerId", "commitmentId"]), Index(value = ["ownerId", "originType", "originKey"], unique = true)])
@@ -186,7 +187,7 @@ interface HistoryDao {
 }
 
 @Database(entities = [CommitmentEntity::class, SourceEntity::class, ReminderEventEntity::class,
-    HistoryBatchEntity::class], version = 6, exportSchema = true)
+    HistoryBatchEntity::class], version = 7, exportSchema = true)
 abstract class CueDatabase : RoomDatabase() {
     abstract fun commitments(): CommitmentDao
     abstract fun history(): HistoryDao
@@ -227,9 +228,15 @@ abstract class CueDatabase : RoomDatabase() {
             }
         }
 
+        private val migration6to7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE commitments ADD COLUMN chainEnabled INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         fun get(context: Context): CueDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(context.applicationContext, CueDatabase::class.java, "cue.db")
-                .addMigrations(migration1to2, migration2to3, migration3to4, migration4to5, migration5to6).build().also { instance = it }
+                .addMigrations(migration1to2, migration2to3, migration3to4, migration4to5, migration5to6, migration6to7).build().also { instance = it }
         }
     }
 }

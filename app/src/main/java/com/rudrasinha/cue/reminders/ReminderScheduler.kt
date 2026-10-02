@@ -5,6 +5,7 @@ import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationManager
 import android.app.PendingIntent
+import com.rudrasinha.cue.MainActivity
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -27,6 +28,7 @@ class ReminderScheduler(private val context: Context) {
     companion object {
         private const val PRIMARY = "com.rudrasinha.cue.REMIND"
         private const val BACKUP = "com.rudrasinha.cue.REMIND_BACKUP"
+        private const val CHAIN = "com.rudrasinha.cue.REMIND_CHAIN"
     }
     private val alarms = context.getSystemService(AlarmManager::class.java)
     private val preferences = context.getSharedPreferences("cue_active_owner", Context.MODE_PRIVATE)
@@ -40,7 +42,10 @@ class ReminderScheduler(private val context: Context) {
     fun exactAvailable(): Boolean = Build.VERSION.SDK_INT < 31 || alarms.canScheduleExactAlarms()
 
     fun silence(item: CommitmentEntity) {
-        context.getSystemService(NotificationManager::class.java).cancel(item.id.hashCode())
+        context.getSystemService(NotificationManager::class.java).apply {
+            cancel(item.id.hashCode())
+            ChainSchedule.offsetsMinutes.forEach { cancel(item.id.hashCode() xor it.toInt()) }
+        }
         runCatching { context.startService(Intent(context, AlarmPlaybackService::class.java).apply {
             action = AlarmPlaybackService.ACTION_STOP
             putExtra(AlarmPlaybackService.EXTRA_ID, item.id)
@@ -50,12 +55,21 @@ class ReminderScheduler(private val context: Context) {
     fun cancel(item: CommitmentEntity) {
         alarms.cancel(pending(item.id, item.dueAtMillis ?: 0L, PRIMARY))
         alarms.cancel(pending(item.id, item.dueAtMillis ?: 0L, BACKUP))
+        ChainSchedule.offsetsMinutes.forEach {
+            alarms.cancel(pending(item.id, item.dueAtMillis ?: 0L, CHAIN, it))
+        }
     }
 
     fun schedule(item: CommitmentEntity) {
         cancel(item)
         val due = item.dueAtMillis ?: return
         if (item.status != "active" || due <= System.currentTimeMillis()) return
+        if (item.chainEnabled) ChainSchedule.upcoming(due, System.currentTimeMillis())
+            .forEach { (offset, at) ->
+            if (!chainWasDelivered(item, offset))
+                alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at,
+                    pending(item.id, due, CHAIN, offset))
+        }
         val operation = pending(item.id, due, PRIMARY)
         if (exactAvailable()) {
             try {
@@ -88,12 +102,21 @@ class ReminderScheduler(private val context: Context) {
         cancel(item)
     }
 
-    private fun pending(id: String, due: Long, actionName: String): PendingIntent {
+    fun chainWasDelivered(item: CommitmentEntity, offset: Long): Boolean =
+        preferences.getLong("chain_${item.id}_$offset", -1L) == item.dueAtMillis
+
+    fun markChainDelivered(item: CommitmentEntity, offset: Long) {
+        preferences.edit().putLong("chain_${item.id}_$offset", item.dueAtMillis ?: -1L).commit()
+        alarms.cancel(pending(item.id, item.dueAtMillis ?: 0L, CHAIN, offset))
+    }
+
+    private fun pending(id: String, due: Long, actionName: String, offset: Long = 0L): PendingIntent {
         val intent = Intent(context, ReminderReceiver::class.java).apply {
             action = actionName
-            data = Uri.parse("cue://commitment/$id")
+            data = Uri.parse("cue://commitment/$id/$offset")
             putExtra("id", id)
             putExtra("due", due)
+            putExtra("offset", offset)
         }
         return PendingIntent.getBroadcast(context, 0, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
@@ -109,6 +132,35 @@ class ReminderReceiver : BroadcastReceiver() {
                 val scheduler = ReminderScheduler(context)
                 if (intent.action == DailyPlanScheduler.ACTION) {
                     DailyPlanScheduler(context).onAlarm()
+                } else if (intent.action == "com.rudrasinha.cue.REMIND_CHAIN") {
+                    val id = intent.getStringExtra("id") ?: return@launch
+                    val offset = intent.getLongExtra("offset", 0L)
+                    val item = CueDatabase.get(context).commitments().byId(id) ?: return@launch
+                    if (!item.chainEnabled || item.status != "active" ||
+                        item.dueAtMillis != intent.getLongExtra("due", -1L) ||
+                        offset !in listOf(60L, 1440L) ||
+                        (item.ownerId != "guest" && item.ownerId != scheduler.activeOwnerId())) return@launch
+                    var delivered = false
+                    synchronized(deliveryLock) {
+                        if (!scheduler.chainWasDelivered(item, offset) &&
+                            showChainNotification(context, item, offset)) {
+                            scheduler.markChainDelivered(item, offset)
+                            delivered = true
+                        }
+                    }
+                    if (delivered) {
+                        val key = "chain_alerted:${item.id}:${item.dueAtMillis}:$offset"
+                        CueDatabase.get(context).history().insertEvent(ReminderEventEntity(
+                            id = UUID.nameUUIDFromBytes(key.toByteArray(Charsets.UTF_8)).toString(),
+                            ownerId = item.ownerId, commitmentId = item.id,
+                            eventType = "chain_alerted",
+                            changeData = JSONObject().put("title", item.title)
+                                .put("due_at_millis", item.dueAtMillis)
+                                .put("offset_minutes", offset).toString(),
+                            actor = "alarm", idempotencyKey = key,
+                            occurredAtMillis = System.currentTimeMillis(), dirty = item.ownerId != "guest"
+                        ))
+                    }
                 } else if (intent.action == "com.rudrasinha.cue.REMIND" ||
                     intent.action == "com.rudrasinha.cue.REMIND_BACKUP") {
                     val id = intent.getStringExtra("id") ?: return@launch
@@ -142,6 +194,30 @@ class ReminderReceiver : BroadcastReceiver() {
                 result.finish()
             }
         }
+    }
+
+    private fun showChainNotification(context: Context, item: CommitmentEntity, offset: Long): Boolean {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
+            return false
+        val manager = context.getSystemService(NotificationManager::class.java)
+        val channel = "cue_chain"
+        manager.createNotificationChannel(android.app.NotificationChannel(channel,
+            "Cue upcoming reminders", NotificationManager.IMPORTANCE_DEFAULT))
+        if (!manager.areNotificationsEnabled() ||
+            manager.getNotificationChannel(channel)?.importance == NotificationManager.IMPORTANCE_NONE) return false
+        val open = PendingIntent.getActivity(context, item.id.hashCode() xor offset.toInt(),
+            Intent(context, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val notice = Notification.Builder(context, channel)
+            .setSmallIcon(R.drawable.ic_cue_foreground)
+            .setContentTitle(item.title)
+            .setContentText(if (offset == 1440L) "Due tomorrow" else "Due in about an hour")
+            .setContentIntent(open).setAutoCancel(true).build()
+        return try {
+            manager.notify(item.id.hashCode() xor offset.toInt(), notice)
+            true
+        } catch (_: SecurityException) { false }
     }
 
     private fun showNotification(context: Context, item: CommitmentEntity): Boolean {

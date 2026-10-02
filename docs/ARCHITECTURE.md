@@ -73,7 +73,9 @@ Floating Cue runs as an opt-in foreground service with a persistent notification
 
 Capture deduplication first scopes active reminders by owner and exact due time, then compares case, punctuation and whitespace normalized titles. A repeated actionable capture links a new source and `source_added` event to the existing reminder; repeat deliveries of one source key do not add another. Different dates, times or actions remain separate. This deliberately conservative match does not infer semantic equivalence from AI.
 
-A manual follow-up acts on the same canonical reminder. The user may move an active or completed reminder to tomorrow or next week, retaining an active reminder’s prior time of day (9 am for completed or untimed reminders). The transition emits a `follow_up` history event and replaces the old local alarm through the shared scheduler. It preserves one active alarm per reminder; previous alert dates remain reconstructable from history. A future multi-alert chain still needs its own synchronized entity.
+A manual follow-up acts on the same canonical reminder. The user may move an active or completed reminder to tomorrow or next week, retaining an active reminder’s prior time of day (9 am for completed or untimed reminders). The transition emits a `follow_up` history event and replaces the old local alarm through the shared scheduler. It preserves one active due-time alarm per reminder; previous alert dates remain reconstructable from history.
+
+An optional per-reminder nudge chain is stored with the canonical reminder and synced as `commitments.chain_enabled`. When enabled from the reminder menu, Android schedules separate advance notifications one day and one hour before its fixed due time if those times are still in the future. The original due time and alarm stay unchanged. Edits, completion, archive, deletion and sign-out cancel pending nudges; restore after reboot schedules only still-future stages. Each delivered nudge gets its own idempotent history event. Advanced user-defined multi-alert chains remain a later extension.
 
 ### Independent alarm tones and alarm controls
 

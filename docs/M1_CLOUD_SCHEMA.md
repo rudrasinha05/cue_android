@@ -93,3 +93,5 @@ grant select, insert on public.reminder_events to authenticated;
 ```
 
 Additive migration `cue_per_reminder_tone` on 2026-10-02: `commitments.tone_id text not null default 'default'`, constrained to `default` or `01`–`20`. Existing reminder rows receive `default`; owner RLS policies remain unchanged.
+
+Additive migration `cue_reminder_chain_nudges` on 2026-10-02: `commitments.chain_enabled boolean not null default false`. Existing reminders remain single-alert; owner RLS policies remain unchanged.

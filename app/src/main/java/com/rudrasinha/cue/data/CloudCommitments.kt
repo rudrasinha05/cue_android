@@ -18,6 +18,7 @@ private data class CloudCommitment(
     @SerialName("due_at") val dueAt: String?,
     val timezone: String,
     @SerialName("tone_id") val toneId: String,
+    @SerialName("chain_enabled") val chainEnabled: Boolean = false,
     val status: String,
     @SerialName("updated_at") val updatedAt: String
 )
@@ -125,6 +126,7 @@ private fun CommitmentEntity.toCloud(userId: String) = CloudCommitment(
     dueAt = dueAtMillis?.let { Instant.ofEpochMilli(it).toString() },
     timezone = timezone,
     toneId = toneId,
+    chainEnabled = chainEnabled,
     status = status,
     updatedAt = Instant.ofEpochMilli(updatedAtMillis).toString()
 )
@@ -138,7 +140,8 @@ private fun CloudCommitment.toLocal() = CommitmentEntity(
     timezone = timezone,
     status = status,
     updatedAtMillis = Instant.parse(updatedAt).toEpochMilli(),
-    toneId = toneId
+    toneId = toneId,
+    chainEnabled = chainEnabled
 )
 
 private fun SourceEntity.toCloud(userId: String) = CloudSource(

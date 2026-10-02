@@ -34,7 +34,8 @@ class CommitmentActions(
             title = title.trim(), details = details?.trim()?.ifBlank { null },
             dueAtMillis = dueAt, timezone = ZoneId.systemDefault().id, status = "active",
             updatedAtMillis = maxOf(now, (old?.updatedAtMillis ?: 0L) + 1),
-            dirty = ownerId != "guest", toneId = ReminderTones.selected(toneId).id
+            dirty = ownerId != "guest", toneId = ReminderTones.selected(toneId).id,
+            chainEnabled = old?.chainEnabled ?: false
         )
         database.withTransaction {
             dao.upsert(listOf(item))
@@ -80,6 +81,14 @@ class CommitmentActions(
     suspend fun archive(ownerId: String, id: String): Boolean = change(ownerId, id, "archived") {
         it.copy(status = "archived", dueAtMillis = null)
     }
+
+    suspend fun setChain(ownerId: String, id: String, enabled: Boolean): Boolean =
+        change(ownerId, id, "chain_changed") { old ->
+            require(!enabled || (old.dueAtMillis != null && old.dueAtMillis > System.currentTimeMillis())) {
+                "Add a future time before enabling reminder nudges."
+            }
+            old.copy(chainEnabled = enabled)
+        }
 
     suspend fun snooze(ownerId: String, id: String): Boolean = change(ownerId, id, "snoozed") {
         it.copy(status = "active", dueAtMillis = System.currentTimeMillis() + 10 * 60_000L)
@@ -134,7 +143,8 @@ class CommitmentActions(
         val id = UUID.randomUUID().toString()
         val snapshot = JSONObject().put("title", item.title).put("status", item.status)
             .put("details", item.details).put("due_at_millis", item.dueAtMillis)
-            .put("timezone", item.timezone).put("tone_id", item.toneId).toString()
+            .put("timezone", item.timezone).put("tone_id", item.toneId)
+            .put("chain_enabled", item.chainEnabled).toString()
         return ReminderEventEntity(id, item.ownerId, item.id, type, snapshot, "app", id,
             item.updatedAtMillis, item.ownerId != "guest")
     }
