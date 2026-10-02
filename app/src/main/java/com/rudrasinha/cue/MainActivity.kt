@@ -200,6 +200,7 @@ private fun CueApp(
     val reminderTone by themeStore.reminderTone.collectAsState(initial = ReminderTones.DEFAULT)
     val panelEnabled by themeStore.notificationPanel.collectAsState(initial = false)
     val floatingOpacity by themeStore.floatingOpacity.collectAsState(initial = 0.82f)
+    val floatingSize by themeStore.floatingSize.collectAsState(initial = 64)
     val screenRunning by ScreenInsightService.running.collectAsState()
     val dailyPlanEnabled by themeStore.dailyPlanEnabled.collectAsState(initial = false)
     val wakeMinute by themeStore.wakeMinute.collectAsState(initial = 420)
@@ -407,7 +408,7 @@ private fun CueApp(
 
     CueTheme(theme, colorTheme) {
         val colors = MaterialTheme.colorScheme
-        LaunchedEffect(userId, floatingEnabled, panelEnabled, floatingOpacity, permissionEpoch,
+        LaunchedEffect(userId, floatingEnabled, panelEnabled, floatingOpacity, floatingSize, permissionEpoch,
             colors.primary, colors.onPrimary, colors.surface, colors.onSurface) {
             if (floatingPreference == null || session is SessionStatus.Initializing) return@LaunchedEffect
             val floatingActive = userId != null && floatingEnabled && Settings.canDrawOverlays(activity)
@@ -415,6 +416,7 @@ private fun CueApp(
                 try {
                     activity.startForegroundService(Intent(activity, FloatingCueService::class.java).apply {
                         putExtra(AssistantControls.EXTRA_OPACITY, floatingOpacity)
+                        putExtra(AssistantControls.EXTRA_SIZE, floatingSize)
                         putExtra(AssistantControls.EXTRA_PANEL, panelEnabled)
                         putExtra(AssistantControls.EXTRA_ACCENT, colors.primary.toArgb())
                         putExtra(AssistantControls.EXTRA_ON_ACCENT, colors.onPrimary.toArgb())
@@ -553,7 +555,7 @@ private fun CueApp(
                             finally { accountBusy = false }
                         }
                     },
-                    floatingEnabled, panelEnabled, floatingOpacity,
+                    floatingEnabled, panelEnabled, floatingOpacity, floatingSize,
                     Settings.canDrawOverlays(activity), controlMessage,
                     { enable ->
                         if (!enable) scope.launch { themeStore.setFloatingCue(false) }
@@ -587,6 +589,7 @@ private fun CueApp(
                         } else scope.launch { themeStore.setNotificationPanel(true) }
                     },
                     { value -> scope.launch { themeStore.setFloatingOpacity(value) } },
+                    { value -> scope.launch { themeStore.setFloatingSize(value) } },
                     Build.VERSION.SDK_INT < 34 || activity.getSystemService(NotificationManager::class.java)
                         .canUseFullScreenIntent(),
                     {
@@ -686,11 +689,13 @@ private fun YouScreen(
     floatingEnabled: Boolean,
     panelEnabled: Boolean,
     floatingOpacity: Float,
+    floatingSize: Int,
     overlayAllowed: Boolean,
     controlMessage: String?,
     onFloating: (Boolean) -> Unit,
     onPanel: (Boolean) -> Unit,
     onOpacity: (Float) -> Unit,
+    onSize: (Int) -> Unit,
     fullScreenAllowed: Boolean,
     onFullScreenAccess: () -> Unit,
     reminderTone: String,
@@ -772,6 +777,16 @@ private fun YouScreen(
                     Slider(value = draftOpacity, onValueChange = { draftOpacity = it },
                         onValueChangeFinished = { onOpacity(draftOpacity) },
                         valueRange = 0.35f..1f)
+                    var draftSize by remember { mutableFloatStateOf(floatingSize.toFloat()) }
+                    LaunchedEffect(floatingSize) { draftSize = floatingSize.toFloat() }
+                    Text("Bubble size · ${draftSize.toInt()} dp",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 12.dp))
+                    Slider(value = draftSize, onValueChange = { draftSize = it },
+                        onValueChangeFinished = {
+                            onSize(((draftSize.toInt() + 2) / 4 * 4).coerceIn(48, 88))
+                        }, valueRange = 48f..88f, steps = 9)
                 }
                 androidx.compose.material3.HorizontalDivider(Modifier.padding(vertical = 14.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {

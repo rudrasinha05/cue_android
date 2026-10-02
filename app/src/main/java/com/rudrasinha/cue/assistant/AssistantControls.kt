@@ -29,6 +29,7 @@ object AssistantControls {
     const val EXTRA_ACTION = "com.rudrasinha.cue.assistant.ACTION"
     const val OPEN_MENU = "menu"
     const val EXTRA_OPACITY = "opacity"
+    const val EXTRA_SIZE = "size_dp"
     const val EXTRA_PANEL = "panel"
     const val EXTRA_ACCENT = "accent"
     const val EXTRA_ON_ACCENT = "on_accent"

@@ -52,12 +52,13 @@ class FloatingCueService : Service() {
     private var rightEdge = true
     private var centerY = 0
     private var opacity = 0.82f
+    private var sizeDp = 64
     private var panel = false
     private var accent = Color.rgb(145, 118, 244)
     private var onAccent = Color.WHITE
     private var surface = Color.rgb(37, 34, 53)
     private var onSurface = Color.WHITE
-    private val size get() = dp(64)
+    private val size get() = dp(sizeDp)
     private val menuWidth get() = dp(260)
     private val menuHeight get() = dp(390)
     private val hidden get() = dp(14)
@@ -85,6 +86,7 @@ class FloatingCueService : Service() {
         rightEdge = state.getBoolean("right_edge", true)
         centerY = state.getInt("center_y", 0)
         opacity = state.getFloat("opacity", opacity)
+        sizeDp = state.getInt("size_dp", sizeDp).coerceIn(48, 88)
         panel = state.getBoolean("panel", false)
         accent = state.getInt("accent", accent)
         onAccent = state.getInt("on_accent", onAccent)
@@ -98,7 +100,8 @@ class FloatingCueService : Service() {
 
     private fun persistState() {
         state.edit().putBoolean("right_edge", rightEdge).putInt("center_y", centerY)
-            .putFloat("opacity", opacity).putBoolean("panel", panel)
+            .putFloat("opacity", opacity).putInt("size_dp", sizeDp)
+            .putBoolean("panel", panel)
             .putInt("accent", accent).putInt("on_accent", onAccent)
             .putInt("surface", surface).putInt("on_surface", onSurface).apply()
     }
@@ -112,6 +115,10 @@ class FloatingCueService : Service() {
         }
         opacity = (intent?.getFloatExtra(AssistantControls.EXTRA_OPACITY, opacity) ?: opacity)
             .coerceIn(0.35f, 1f)
+        val nextSize = (intent?.getIntExtra(AssistantControls.EXTRA_SIZE, sizeDp) ?: sizeDp)
+            .coerceIn(48, 88)
+        val sizeChanged = nextSize != sizeDp
+        sizeDp = nextSize
         panel = intent?.getBooleanExtra(AssistantControls.EXTRA_PANEL, panel) ?: panel
         val newAccent = intent?.getIntExtra(AssistantControls.EXTRA_ACCENT, accent) ?: accent
         val newOnAccent = intent?.getIntExtra(AssistantControls.EXTRA_ON_ACCENT, onAccent) ?: onAccent
@@ -139,7 +146,7 @@ class FloatingCueService : Service() {
                     else showWindow()
                 }
             }
-        } else if (root == null || colorsChanged) showWindow() else root?.findViewWithTag<View>("bubble")?.alpha =
+        } else if (root == null || colorsChanged || sizeChanged) showWindow() else root?.findViewWithTag<View>("bubble")?.alpha =
             if (expanded) 1f else opacity
         handler.removeCallbacks(permissionCheck)
         handler.postDelayed(permissionCheck, 5000)
@@ -182,7 +189,7 @@ class FloatingCueService : Service() {
         val bubble = TextView(this).apply {
             tag = "bubble"
             text = "cue"
-            textSize = 18f
+            textSize = (18f * sizeDp / 64f).coerceIn(14f, 24f)
             typeface = android.graphics.Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
             contentDescription = "Floating Cue. Double tap for actions; drag to move."
@@ -190,7 +197,7 @@ class FloatingCueService : Service() {
             background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
                 intArrayOf(accent, Color.rgb(Color.red(accent) * 3 / 4,
                     Color.green(accent) * 3 / 4, Color.blue(accent) * 3 / 4))).apply {
-                cornerRadius = dp(24).toFloat()
+                cornerRadius = size / 2f
                 setStroke(dp(1), accent)
             }
             elevation = dp(12).toFloat()
