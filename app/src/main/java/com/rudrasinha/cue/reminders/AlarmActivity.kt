@@ -6,6 +6,8 @@ import android.os.Build
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -23,6 +25,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.rudrasinha.cue.data.CueDatabase
+import com.rudrasinha.cue.settings.ColorTheme
+import com.rudrasinha.cue.settings.ThemePreference
+import com.rudrasinha.cue.settings.ThemeStore
+import com.rudrasinha.cue.ui.CueTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -49,7 +55,10 @@ class AlarmActivity : ComponentActivity() {
                 if (item == null || item.dueAtMillis != due || item.status != "active" ||
                     (item.ownerId != "guest" && item.ownerId != owner)) { finish(); return@withContext }
                 setContent {
-                    MaterialTheme {
+                    val themeStore = ThemeStore(applicationContext)
+                    val mode by themeStore.mode.collectAsState(initial = ThemePreference.SYSTEM)
+                    val palette by themeStore.colorTheme.collectAsState(initial = ColorTheme.DEFAULT)
+                    CueTheme(mode, palette) {
                         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                             Column(Modifier.fillMaxSize().padding(32.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally,

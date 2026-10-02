@@ -17,4 +17,12 @@ class ReminderMatchTest {
         assertNull(ReminderMatch.existing(listOf(reminder("Call Mom")), "Pay rent"))
         assertNull(ReminderMatch.existing(listOf(reminder("Call Mom")), "!!!"))
     }
+
+    @Test fun equivalentWordingLinksOnlySameActionAndObject() {
+        val existing = reminder("Pay electricity bill")
+        assertEquals(existing, ReminderMatch.existing(listOf(existing), "Electricity bill payment"))
+        assertNull(ReminderMatch.existing(listOf(existing), "Pay internet bill"))
+        assertNull(ReminderMatch.existing(listOf(existing), "Submit electricity bill"))
+        assertNull(ReminderMatch.existing(listOf(existing), "Pay electricity bill and rent"))
+    }
 }
