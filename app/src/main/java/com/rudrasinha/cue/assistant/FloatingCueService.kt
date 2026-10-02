@@ -1,5 +1,6 @@
 package com.rudrasinha.cue.assistant
 
+import android.annotation.SuppressLint
 import android.app.KeyguardManager
 import android.app.Service
 import android.content.Intent
@@ -168,6 +169,8 @@ class FloatingCueService : Service() {
         super.onDestroy()
     }
 
+    // The touch listener calls performClick() for taps and a click listener handles accessibility actions.
+    @SuppressLint("ClickableViewAccessibility")
     private fun showWindow() {
         root?.let { runCatching { windows.removeViewImmediate(it) } }
         root = null
@@ -186,12 +189,7 @@ class FloatingCueService : Service() {
 
         val frame = FrameLayout(this)
         if (expanded) addActions(frame)
-        val bubble = object : TextView(this) {
-            override fun performClick(): Boolean {
-                super.performClick()
-                return true
-            }
-        }.apply {
+        val bubble = TextView(this).apply {
             tag = "bubble"
             text = "cue"
             textSize = (18f * sizeDp / 64f).coerceIn(14f, 24f)
