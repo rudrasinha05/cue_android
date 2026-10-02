@@ -67,7 +67,17 @@ data class HistoryBatchEntity(
     val eventCount: Int,
     val checksum: String,
     val payload: ByteArray,
-    val createdAtMillis: Long
+    val createdAtMillis: Long,
+    @ColumnInfo(defaultValue = "''") val searchIndex: String = ""
+)
+
+data class HistoryBatchSummary(
+    val id: String,
+    val ownerId: String,
+    val firstAtMillis: Long,
+    val lastAtMillis: Long,
+    val eventCount: Int,
+    val searchIndex: String
 )
 
 @Dao
@@ -120,8 +130,11 @@ interface HistoryDao {
     @Query("SELECT * FROM reminder_events WHERE ownerId = :ownerId ORDER BY occurredAtMillis DESC")
     fun observeEvents(ownerId: String): Flow<List<ReminderEventEntity>>
 
-    @Query("SELECT * FROM history_batches WHERE ownerId = :ownerId ORDER BY lastAtMillis DESC")
-    fun observeBatches(ownerId: String): Flow<List<HistoryBatchEntity>>
+    @Query("SELECT id, ownerId, firstAtMillis, lastAtMillis, eventCount, searchIndex FROM history_batches WHERE ownerId = :ownerId ORDER BY lastAtMillis DESC")
+    fun observeBatches(ownerId: String): Flow<List<HistoryBatchSummary>>
+
+    @Query("SELECT * FROM history_batches WHERE ownerId = :ownerId AND id = :id LIMIT 1")
+    suspend fun batchById(ownerId: String, id: String): HistoryBatchEntity?
 
     @Query("SELECT * FROM history_batches WHERE ownerId = :ownerId")
     suspend fun batches(ownerId: String): List<HistoryBatchEntity>
@@ -173,7 +186,7 @@ interface HistoryDao {
 }
 
 @Database(entities = [CommitmentEntity::class, SourceEntity::class, ReminderEventEntity::class,
-    HistoryBatchEntity::class], version = 5, exportSchema = true)
+    HistoryBatchEntity::class], version = 6, exportSchema = true)
 abstract class CueDatabase : RoomDatabase() {
     abstract fun commitments(): CommitmentDao
     abstract fun history(): HistoryDao
@@ -208,9 +221,15 @@ abstract class CueDatabase : RoomDatabase() {
             }
         }
 
+        private val migration5to6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE history_batches ADD COLUMN searchIndex TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun get(context: Context): CueDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(context.applicationContext, CueDatabase::class.java, "cue.db")
-                .addMigrations(migration1to2, migration2to3, migration3to4, migration4to5).build().also { instance = it }
+                .addMigrations(migration1to2, migration2to3, migration3to4, migration4to5, migration5to6).build().also { instance = it }
         }
     }
 }

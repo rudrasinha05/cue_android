@@ -17,6 +17,8 @@ class HistoryArchiveTest {
         val restored = HistoryArchive.read(batch)
         assertEquals(events, restored)
         assertEquals(events.size, batch.eventCount)
+        assertTrue(batch.searchIndex.contains("a recurring reminder"))
+        assertTrue(batch.searchIndex.contains("updated"))
         assertTrue(batch.payload.size < events.sumOf { it.changeData.length + it.id.length })
         assertEquals(batch.id, HistoryArchive.pack("account-1", events).id)
     }

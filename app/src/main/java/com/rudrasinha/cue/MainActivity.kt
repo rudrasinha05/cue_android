@@ -514,7 +514,9 @@ private fun CueApp(
                     onDocument = { dispatchShortcut(CueAction.IMPORT) },
                     onQuick = { dispatchShortcut(CueAction.QUICK) },
                     message = reminderMessage, modifier = Modifier.padding(padding))
-                Tab.INBOX -> HistoryScreen(history, sources, batches, onOpenSource = { value ->
+                Tab.INBOX -> HistoryScreen(history, sources, batches,
+                    loadBatch = { id -> database.history().batchById(ownerId, id) },
+                    onOpenSource = { value ->
                     runCatching {
                         val uri = Uri.parse(value)
                         activity.startActivity(Intent(Intent.ACTION_VIEW).apply {

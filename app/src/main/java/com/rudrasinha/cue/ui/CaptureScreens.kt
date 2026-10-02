@@ -25,10 +25,13 @@ import com.rudrasinha.cue.assistant.CueAction
 import com.rudrasinha.cue.data.SourceEntity
 import com.rudrasinha.cue.data.HistoryArchive
 import com.rudrasinha.cue.data.HistoryBatchEntity
+import com.rudrasinha.cue.data.HistoryBatchSummary
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import org.json.JSONObject
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 private val night: Color @Composable get() = MaterialTheme.colorScheme.background
 private val purple: Color @Composable get() = MaterialTheme.colorScheme.primary
@@ -138,14 +141,29 @@ private fun CaptureOption(icon: ImageVector, title: String, subtitle: String, on
 
 @Composable
 fun HistoryScreen(events: List<ReminderEventEntity>, sources: List<SourceEntity>,
-    batches: List<HistoryBatchEntity>,
+    batches: List<HistoryBatchSummary>,
+    loadBatch: suspend (String) -> HistoryBatchEntity?,
     onOpenSource: (String) -> Boolean,
     modifier: Modifier = Modifier) {
     var query by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf<ReminderEventEntity?>(null) }
     var sourceError by remember { mutableStateOf(false) }
     val sourceByReminder = remember(sources) { sources.groupBy { it.commitmentId } }
-    val archived = remember(batches) { batches.map { runCatching { HistoryArchive.read(it) } } }
+    var openedBatchId by remember { mutableStateOf<String?>(null) }
+    val openedBatch = batches.firstOrNull { it.id == openedBatchId }
+    val openedEvents by produceState<Result<List<ReminderEventEntity>>?>(null,
+        openedBatch?.id, openedBatch?.ownerId) {
+        value = if (openedBatch == null) null else runCatching {
+            val saved = withContext(Dispatchers.IO) { loadBatch(openedBatch.id) }
+                ?: error("Archive no longer available")
+            withContext(Dispatchers.Default) { HistoryArchive.read(saved) }
+        }
+    }
+    val matchingBatches = batches.filter { batch ->
+        query.isBlank() || batch.searchIndex.isBlank() || batch.searchIndex.contains(query, true) ||
+            sources.any { it.commitmentId in batch.searchIndex &&
+                (it.title.orEmpty().contains(query, true) || it.excerpt.orEmpty().contains(query, true)) }
+    }
     fun sourceFor(event: ReminderEventEntity): SourceEntity? {
         val linked = sourceByReminder[event.commitmentId].orEmpty()
         val sourceId = event.snapshot().optString("source_id")
@@ -155,7 +173,7 @@ fun HistoryScreen(events: List<ReminderEventEntity>, sources: List<SourceEntity>
         if (event.eventType == "source_added") "Source added"
         else event.eventType.replaceFirstChar { it.uppercase() }
 
-    val allEvents = (events + archived.flatMap { it.getOrDefault(emptyList()) })
+    val allEvents = (events + openedEvents?.getOrDefault(emptyList()).orEmpty())
         .distinctBy { it.id }.sortedWith(compareByDescending<ReminderEventEntity> { it.occurredAtMillis }
             .thenByDescending { it.id })
     val visible = allEvents.filter { event ->
@@ -173,10 +191,8 @@ fun HistoryScreen(events: List<ReminderEventEntity>, sources: List<SourceEntity>
             style = MaterialTheme.typography.headlineLarge)
         Text("Every change and where a reminder came from.", color = subdued,
             modifier = Modifier.padding(top = 7.dp, bottom = 20.dp))
-        if (archived.any { it.isFailure }) Text("Some older history needs repair. Sync your account and try again.",
-            color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.padding(bottom = 12.dp))
         OutlinedTextField(query, { query = it }, singleLine = true,
-            placeholder = { Text("Search titles, changes or sources") },
+            placeholder = { Text("Search recent and indexed archives") },
             leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
             modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp),
             colors = OutlinedTextFieldDefaults.colors(
@@ -185,9 +201,38 @@ fun HistoryScreen(events: List<ReminderEventEntity>, sources: List<SourceEntity>
                 focusedPlaceholderColor = subdued, unfocusedPlaceholderColor = subdued,
                 focusedLeadingIconColor = purple, unfocusedLeadingIconColor = subdued))
         Spacer(Modifier.height(18.dp))
+        if (matchingBatches.isNotEmpty()) {
+            Text("OLDER HISTORY", color = subdued, style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 10.dp))
+            matchingBatches.forEach { batch ->
+                val open = openedBatchId == batch.id
+                Surface(shape = RoundedCornerShape(20.dp), color = panel,
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                        .clickable { openedBatchId = if (open) null else batch.id }) {
+                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.Inventory2, contentDescription = null, tint = purple)
+                        Column(Modifier.weight(1f).padding(start = 13.dp)) {
+                            Text("${batch.eventCount} saved changes", color = pale,
+                                fontWeight = FontWeight.SemiBold)
+                            Text("${Instant.ofEpochMilli(batch.firstAtMillis).atZone(ZoneId.systemDefault()).format(dateFormat)} – " +
+                                Instant.ofEpochMilli(batch.lastAtMillis).atZone(ZoneId.systemDefault()).format(dateFormat),
+                                color = subdued, style = MaterialTheme.typography.bodySmall)
+                        }
+                        Icon(if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                            contentDescription = if (open) "Close archive" else "Open archive", tint = subdued)
+                    }
+                }
+            }
+            if (openedBatch != null && openedEvents == null) Text("Opening older history…",
+                color = subdued, modifier = Modifier.padding(bottom = 12.dp))
+            if (openedEvents?.isFailure == true) Text("This archive could not be verified. Sync your account and try again.",
+                color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(bottom = 12.dp))
+            Spacer(Modifier.height(10.dp))
+        }
         if (visible.isEmpty()) {
             Surface(shape = RoundedCornerShape(22.dp), color = panel) {
-                Text(if (query.isBlank()) "Your saved reminder changes will appear here."
+                Text(if (batches.isNotEmpty()) "Open an older archive to see its saved changes."
+                    else if (query.isBlank()) "Your saved reminder changes will appear here."
                     else "No history matches your search.", color = subdued,
                     modifier = Modifier.fillMaxWidth().padding(20.dp))
             }

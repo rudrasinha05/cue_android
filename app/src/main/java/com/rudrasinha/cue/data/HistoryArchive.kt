@@ -11,6 +11,9 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 
 @Serializable
 private data class PackedEvent(
@@ -59,7 +62,12 @@ class HistoryArchive(private val database: CueDatabase) {
             }.toByteArray()
             return HistoryBatchEntity(UUID.nameUUIDFromBytes(canonical).toString(), ownerId,
                 ordered.first().occurredAtMillis, ordered.last().occurredAtMillis,
-                ordered.size, canonical.sha256(), zipped, System.currentTimeMillis())
+                ordered.size, canonical.sha256(), zipped, System.currentTimeMillis(),
+                searchIndex = ordered.asSequence().flatMap { event ->
+                    val title = runCatching { Json.parseToJsonElement(event.changeData)
+                        .jsonObject["title"]?.jsonPrimitive?.contentOrNull.orEmpty() }.getOrDefault("")
+                    sequenceOf(event.eventType.take(48), title.take(120), event.commitmentId)
+                }.distinct().joinToString(" ").lowercase())
         }
 
         fun read(batch: HistoryBatchEntity): List<ReminderEventEntity> {
