@@ -151,11 +151,12 @@ fun HistoryScreen(events: List<ReminderEventEntity>, sources: List<SourceEntity>
     val sourceByReminder = remember(sources) { sources.groupBy { it.commitmentId } }
     var openedBatchId by remember { mutableStateOf<String?>(null) }
     val openedBatch = batches.firstOrNull { it.id == openedBatchId }
-    val openedEvents by produceState<Result<List<ReminderEventEntity>>?>(null,
-        openedBatch?.id, openedBatch?.ownerId) {
-        value = null
+    var openedEvents by remember(openedBatch?.id, openedBatch?.ownerId) {
+        mutableStateOf<Result<List<ReminderEventEntity>>?>(null)
+    }
+    LaunchedEffect(openedBatch?.id, openedBatch?.ownerId) {
         if (openedBatch != null) {
-            value = runCatching {
+            openedEvents = runCatching {
                 val saved = withContext(Dispatchers.IO) { loadBatch(openedBatch.id) }
                     ?: error("Archive no longer available")
                 withContext(Dispatchers.Default) { HistoryArchive.read(saved) }
