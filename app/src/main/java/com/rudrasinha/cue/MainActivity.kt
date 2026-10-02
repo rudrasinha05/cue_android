@@ -302,8 +302,9 @@ private fun CueApp(
     fun dayNotificationsEnabled() = channelNotificationsEnabled("cue_day_plan")
     fun screenNotificationsEnabled() = channelNotificationsEnabled("cue_screen")
     val listenerComponent = remember { ComponentName(activity, CueNotificationListener::class.java) }
-    val listenerAccess = activity.getSystemService(NotificationManager::class.java)
-        .isNotificationListenerAccessGranted(listenerComponent)
+    val listenerAccess = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1 &&
+        activity.getSystemService(NotificationManager::class.java)
+            .isNotificationListenerAccessGranted(listenerComponent)
     var notificationAllowed by remember { mutableStateOf(notificationsEnabled()) }
     LaunchedEffect(permissionEpoch, reminderTone) { notificationAllowed = notificationsEnabled() }
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->

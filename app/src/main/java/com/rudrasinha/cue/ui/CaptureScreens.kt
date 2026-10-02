@@ -153,10 +153,13 @@ fun HistoryScreen(events: List<ReminderEventEntity>, sources: List<SourceEntity>
     val openedBatch = batches.firstOrNull { it.id == openedBatchId }
     val openedEvents by produceState<Result<List<ReminderEventEntity>>?>(null,
         openedBatch?.id, openedBatch?.ownerId) {
-        value = if (openedBatch == null) null else runCatching {
-            val saved = withContext(Dispatchers.IO) { loadBatch(openedBatch.id) }
-                ?: error("Archive no longer available")
-            withContext(Dispatchers.Default) { HistoryArchive.read(saved) }
+        value = null
+        if (openedBatch != null) {
+            value = runCatching {
+                val saved = withContext(Dispatchers.IO) { loadBatch(openedBatch.id) }
+                    ?: error("Archive no longer available")
+                withContext(Dispatchers.Default) { HistoryArchive.read(saved) }
+            }
         }
     }
     val matchingBatches = batches.filter { batch ->
