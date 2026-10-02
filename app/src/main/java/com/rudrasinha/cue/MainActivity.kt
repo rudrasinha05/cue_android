@@ -509,8 +509,9 @@ private fun CueApp(
                 Tab.TODAY, Tab.UPCOMING -> CommitmentListScreen(
                     items, completed, selected == Tab.UPCOMING, reminderMessage,
                     scheduler.exactAvailable(), notificationAllowed, {
-                        activity.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
-                            Uri.parse("package:${activity.packageName}")))
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+                            activity.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                                Uri.parse("package:${activity.packageName}")))
                     },
                     {
                         activity.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {

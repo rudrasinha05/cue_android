@@ -14,6 +14,8 @@ Cue is an Android reminder assistant that helps you capture what matters, get lo
 
 The repository includes the Gradle wrapper, so no system Gradle installation is needed. Do not commit `local.properties`, signing keys, Supabase secrets, or AI provider keys.
 
+CI attaches a debug APK, test/lint reports and an unsigned release AAB to each run. See the [release gate](docs/RELEASE_GATE.md) before using an AAB for Play.
+
 ## M1 account setup
 
 In You, **Export my Cue data** saves a JSON copy of the current profile, including exact decoded history. Guest users can delete their local reminders and history after confirmation. Synced account deletion is still a release gate.

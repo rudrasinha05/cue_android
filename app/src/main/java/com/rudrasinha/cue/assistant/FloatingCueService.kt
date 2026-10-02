@@ -186,13 +186,18 @@ class FloatingCueService : Service() {
 
         val frame = FrameLayout(this)
         if (expanded) addActions(frame)
-        val bubble = TextView(this).apply {
+        val bubble = object : TextView(this) {
+            override fun performClick(): Boolean {
+                super.performClick()
+                return true
+            }
+        }.apply {
             tag = "bubble"
             text = "cue"
             textSize = (18f * sizeDp / 64f).coerceIn(14f, 24f)
             typeface = android.graphics.Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
-            contentDescription = "Floating Cue. Double tap for actions; drag to move."
+            contentDescription = "Floating Cue. Tap for actions; drag to move."
             setTextColor(onAccent)
             background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
                 intArrayOf(accent, Color.rgb(Color.red(accent) * 3 / 4,
