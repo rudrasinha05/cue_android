@@ -10,7 +10,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.Lightbulb
@@ -51,7 +50,6 @@ private val muted: Color @Composable get() = MaterialTheme.colorScheme.onSurface
 private val violet: Color @Composable get() = MaterialTheme.colorScheme.primary
 private val coral: Color @Composable get() = MaterialTheme.colorScheme.error
 private val sky: Color @Composable get() = MaterialTheme.colorScheme.secondary
-private val amber: Color @Composable get() = MaterialTheme.colorScheme.tertiary
 private val aqua: Color @Composable get() = MaterialTheme.colorScheme.primary
 private val timeFormat = DateTimeFormatter.ofPattern("EEE, d MMM · h:mm a")
 private val dayFormat = DateTimeFormatter.ofPattern("EEEE, d MMMM")
@@ -59,7 +57,7 @@ private val dayFormat = DateTimeFormatter.ofPattern("EEEE, d MMMM")
 private enum class ReminderView(val label: String, val icon: ImageVector) {
     TODAY("Today", Icons.Filled.CalendarMonth),
     SCHEDULED("Scheduled", Icons.Filled.Schedule),
-    PAST("Overdue", Icons.Filled.History),
+    PAST("Past", Icons.Filled.History),
     NO_ALERT("No alert", Icons.Filled.NotificationsOff),
     COMPLETED("Completed", Icons.Filled.CheckCircle),
     ALL("All", Icons.Filled.ViewAgenda)
@@ -160,13 +158,9 @@ fun CommitmentListScreen(
             listOf(canvasTop, MaterialTheme.colorScheme.primaryContainer.copy(alpha = .35f), canvasTop)))) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
                 .padding(horizontal = 22.dp)) {
-                Spacer(Modifier.height(24.dp))
-                Text(today.format(DateTimeFormatter.ofPattern("EEEE, d MMMM")).uppercase(),
-                    color = violet, style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(26.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (upcoming) "Your calendar" else "Your reminders",
+                    Text(if (upcoming) "Calendar" else "Reminders",
                         color = ivory, style = MaterialTheme.typography.headlineLarge,
                         fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                     IconButton(onClick = { searchOpen = !searchOpen; if (!searchOpen) query = "" },
@@ -210,7 +204,7 @@ fun CommitmentListScreen(
                             focusedPlaceholderColor = muted, unfocusedPlaceholderColor = muted,
                             focusedBorderColor = violet, unfocusedBorderColor = muted))
                 }
-                Spacer(Modifier.height(24.dp))
+                Spacer(Modifier.height(28.dp))
                 if (upcoming) {
                     Surface(shape = RoundedCornerShape(28.dp), color = cardColor,
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
@@ -230,19 +224,23 @@ fun CommitmentListScreen(
                         Text("Today", color = violet)
                     }
                 } else {
-                    SummaryHero(active, today, now, onAdd = { openEditor() }, onDayPlan = onDayPlan)
-                    Spacer(Modifier.height(28.dp))
-                    Text("EXPLORE", color = muted, style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(12.dp))
-                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        (listOf(ReminderView.ALL) + ReminderView.entries.filter { it != ReminderView.ALL })
-                            .forEach { view ->
-                                FilterPill(view, matching(view).size, selectedView == view) {
-                                    selectedView = view
-                                }
+                    val categories = listOf(ReminderView.TODAY, ReminderView.SCHEDULED,
+                        ReminderView.PAST, ReminderView.NO_ALERT,
+                        ReminderView.COMPLETED, ReminderView.ALL)
+                    categories.chunked(2).forEach { pair ->
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            pair.forEach { view ->
+                                CategoryCard(view, matching(view).size, selectedView == view,
+                                    Modifier.weight(1f)) { selectedView = view }
                             }
+                        }
+                        Spacer(Modifier.height(12.dp))
+                    }
+                    TextButton(onClick = onDayPlan,
+                        modifier = Modifier.align(Alignment.End)) {
+                        Icon(Icons.Filled.AutoAwesome, null, modifier = Modifier.size(17.dp))
+                        Spacer(Modifier.width(7.dp))
+                        Text("View my day")
                     }
                 }
                 if (!notificationsAllowed && active.any { it.dueAtMillis != null }) {
@@ -255,17 +253,17 @@ fun CommitmentListScreen(
                 }
                 message?.let { Text(it, color = violet, modifier = Modifier.padding(vertical = 10.dp),
                     style = MaterialTheme.typography.bodySmall) }
-                Spacer(Modifier.height(26.dp))
+                Spacer(Modifier.height(18.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(if (upcoming) selectedDate.format(dayFormat)
-                            else if (selectedView == ReminderView.ALL) "Coming into focus"
+                            else if (selectedView == ReminderView.ALL) "Your list"
                             else selectedView.label,
                             color = ivory, style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.SemiBold)
                         Text(if (upcoming) "Your plan for this day"
                             else if (isCompleted) "The things you finished"
-                            else "One thing at a time",
+                            else "Tap a reminder to edit it",
                             color = muted, style = MaterialTheme.typography.bodySmall)
                     }
                     Surface(shape = CircleShape, color = MaterialTheme.colorScheme.secondaryContainer) {
@@ -316,16 +314,19 @@ fun CommitmentListScreen(
                 }
                 Spacer(Modifier.height(108.dp))
             }
-            Button(onClick = { openEditor() },
-                modifier = Modifier.align(Alignment.BottomEnd)
-                    .padding(end = 22.dp, bottom = 20.dp).height(58.dp),
-                shape = RoundedCornerShape(21.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = violet,
-                    contentColor = MaterialTheme.colorScheme.onPrimary),
-                contentPadding = PaddingValues(horizontal = 22.dp)) {
-                Icon(Icons.Filled.Add, contentDescription = null)
-                Spacer(Modifier.width(10.dp))
-                Text("Add reminder", fontWeight = FontWeight.Bold)
+            Surface(onClick = { openEditor() },
+                modifier = Modifier.align(Alignment.BottomCenter)
+                    .padding(horizontal = 32.dp, vertical = 16.dp)
+                    .widthIn(max = 420.dp).fillMaxWidth().height(62.dp),
+                shape = RoundedCornerShape(28.dp), color = cardColor,
+                shadowElevation = 9.dp,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+                Row(Modifier.fillMaxSize().padding(horizontal = 24.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text("Add reminder", color = ivory, style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.weight(1f))
+                    Icon(Icons.Filled.Add, contentDescription = null, tint = violet)
+                }
             }
         }
     }
@@ -340,72 +341,22 @@ fun CommitmentListScreen(
 }
 
 @Composable
-private fun SummaryHero(active: List<CommitmentEntity>, today: LocalDate, now: Long,
-    onAdd: () -> Unit, onDayPlan: () -> Unit) {
-    val todayCount = active.count { item ->
-        item.dueAtMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate() } == today
-    }
-    val next = active.filter { (it.dueAtMillis ?: 0L) > now }
-        .minByOrNull { it.dueAtMillis ?: Long.MAX_VALUE }
-    val heroText = MaterialTheme.colorScheme.onPrimary
-    Box(Modifier.fillMaxWidth().height(184.dp).clip(RoundedCornerShape(30.dp))
-        .background(Brush.linearGradient(listOf(violet, violet.copy(alpha = .86f))))
-        .border(1.dp, MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(30.dp))) {
-        Box(Modifier.align(Alignment.TopEnd).offset(x = 56.dp, y = (-76).dp)
-            .size(220.dp).background(heroText.copy(alpha = .10f), CircleShape))
-        Box(Modifier.align(Alignment.BottomEnd).offset(x = 30.dp, y = 87.dp)
-            .size(166.dp).background(heroText.copy(alpha = .08f), CircleShape))
-        Column(Modifier.fillMaxSize().padding(23.dp), verticalArrangement = Arrangement.SpaceBetween) {
+private fun CategoryCard(view: ReminderView, count: Int, selected: Boolean,
+    modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Surface(onClick = onClick, modifier = modifier.height(126.dp),
+        shape = RoundedCornerShape(26.dp), color = cardColor,
+        border = BorderStroke(1.dp, if (selected) violet else MaterialTheme.colorScheme.outlineVariant),
+        shadowElevation = if (selected) 4.dp else 0.dp) {
+        Column(Modifier.fillMaxSize().padding(18.dp),
+            verticalArrangement = Arrangement.SpaceBetween) {
+            Icon(view.icon, contentDescription = null, tint = view.tint,
+                modifier = Modifier.size(28.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = heroText,
-                    modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("TODAY'S FOCUS", color = heroText,
-                    style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                Text(view.label, color = ivory, style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f), maxLines = 1)
+                Text(count.toString(), color = if (selected) violet else muted,
+                    fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
             }
-            Row(verticalAlignment = Alignment.Bottom) {
-                Column(Modifier.weight(1f)) {
-                    Text("${todayCount}", color = heroText,
-                        style = MaterialTheme.typography.displayMedium, fontWeight = FontWeight.Bold)
-                    Text(if (todayCount == 1) "reminder for today" else "reminders for today",
-                        color = heroText.copy(alpha = .85f), style = MaterialTheme.typography.bodyMedium)
-                }
-                IconButton(onClick = onAdd,
-                    modifier = Modifier.size(48.dp).background(heroText, CircleShape)) {
-                    Icon(Icons.Filled.Add, contentDescription = "Add reminder", tint = violet)
-                }
-            }
-            Row(Modifier.fillMaxWidth().clickable(onClick = onDayPlan),
-                verticalAlignment = Alignment.CenterVertically) {
-                Text(next?.let { "NEXT · ${it.title.take(25)}" } ?: "THE DAY IS YOURS",
-                    color = heroText, style = MaterialTheme.typography.labelSmall,
-                    modifier = Modifier.weight(1f), maxLines = 1,
-                    overflow = TextOverflow.Ellipsis)
-                Text("VIEW DAY  ›", color = heroText,
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold)
-            }
-        }
-    }
-}
-
-@Composable
-private fun FilterPill(view: ReminderView, count: Int, selected: Boolean, onClick: () -> Unit) {
-    Surface(onClick = onClick, shape = RoundedCornerShape(18.dp),
-        color = if (selected) violet else cardColor,
-        border = BorderStroke(1.dp, if (selected) violet else MaterialTheme.colorScheme.outlineVariant)) {
-        Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            Icon(view.icon, contentDescription = null,
-                tint = if (selected) MaterialTheme.colorScheme.onPrimary else view.tint,
-                modifier = Modifier.size(17.dp))
-            Spacer(Modifier.width(7.dp))
-            Text(view.label, color = if (selected) MaterialTheme.colorScheme.onPrimary else ivory,
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium)
-            Spacer(Modifier.width(8.dp))
-            Text(count.toString(), color = if (selected) MaterialTheme.colorScheme.onPrimary else muted,
-                style = MaterialTheme.typography.labelSmall)
         }
     }
 }
@@ -461,19 +412,16 @@ private fun ReminderCard(item: CommitmentEntity, now: Long, completed: Boolean,
         item.dueAtMillis < now -> "Overdue · ${formatTime(item.dueAtMillis)}"
         else -> formatTime(item.dueAtMillis)
     }
-    Surface(shape = RoundedCornerShape(24.dp), color = cardColor,
+    Surface(shape = RoundedCornerShape(26.dp), color = cardColor,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
-        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 16.dp, bottom = 16.dp),
+        Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 8.dp, top = 20.dp, bottom = 20.dp),
             verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.width(4.dp).height(54.dp)
-                .background(accent, RoundedCornerShape(8.dp)))
-            Spacer(Modifier.width(13.dp))
             IconButton(onClick = onComplete, enabled = !completed, modifier = Modifier.size(36.dp)) {
                 Icon(if (completed) Icons.Filled.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
                     contentDescription = if (completed) "Completed" else "Mark ${item.title} done",
                     tint = if (completed) aqua else muted, modifier = Modifier.size(26.dp))
             }
-            Column(Modifier.weight(1f).padding(start = 8.dp)
+            Column(Modifier.weight(1f).padding(start = 14.dp)
                 .clickable(enabled = !completed, onClick = onEdit)) {
                 Text(item.title, color = ivory, style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
