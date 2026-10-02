@@ -83,6 +83,18 @@ class CommitmentActions(
         it.copy(status = "active", dueAtMillis = System.currentTimeMillis() + 10 * 60_000L)
     }
 
+    suspend fun followUp(ownerId: String, id: String, days: Long): Boolean {
+        val previous = dao.byId(id) ?: error("Reminder is unavailable.")
+        require(previous.ownerId == ownerId && previous.status in listOf("active", "completed")) {
+            "Reminder is unavailable."
+        }
+        val nextDue = FollowUpTime.at(System.currentTimeMillis(), previous.dueAtMillis,
+            days, ZoneId.systemDefault())
+        return change(ownerId, id, "follow_up", allowCompleted = true) {
+            it.copy(status = "active", dueAtMillis = nextDue)
+        }
+    }
+
     suspend fun delete(ownerId: String, id: String): Boolean =
         change(ownerId, id, "deleted", allowCompleted = true) {
             it.copy(status = "cancelled", dueAtMillis = null)

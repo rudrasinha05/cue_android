@@ -486,6 +486,7 @@ private fun CueApp(
                     },
                     { id -> perform("Marked done.") { actions.complete(ownerId, id) } },
                     { id -> perform("Reminder moved 10 minutes ahead.") { actions.snooze(ownerId, id) } },
+                    { id, days -> perform("Follow-up scheduled.") { actions.followUp(ownerId, id, days) } },
                     { id -> perform("Reminder archived.") { actions.archive(ownerId, id) } },
                     { id -> perform("Reminder deleted.") { actions.delete(ownerId, id) } },
                     userId != null,

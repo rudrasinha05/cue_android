@@ -81,7 +81,8 @@ fun CommitmentListScreen(
     message: String?, exactAvailable: Boolean, notificationsAllowed: Boolean,
     onExactAccess: () -> Unit, onNotificationAccess: () -> Unit,
     onSave: (String?, String, String?, Long?, CaptureOrigin) -> Unit,
-    onComplete: (String) -> Unit, onSnooze: (String) -> Unit, onArchive: (String) -> Unit,
+    onComplete: (String) -> Unit, onSnooze: (String) -> Unit,
+    onFollowUp: (String, Long) -> Unit, onArchive: (String) -> Unit,
     onDelete: (String) -> Unit,
     signedIn: Boolean, onSync: () -> Unit, onSettings: () -> Unit,
     onDayPlan: () -> Unit,
@@ -301,6 +302,7 @@ fun CommitmentListScreen(
                                         onEdit = { openEditor(item) },
                                         onComplete = { onComplete(item.id) },
                                         onSnooze = { onSnooze(item.id) },
+                                        onFollowUp = { days -> onFollowUp(item.id, days) },
                                         onArchive = { onArchive(item.id) },
                                         onDelete = { onDelete(item.id) })
                                     Spacer(Modifier.height(10.dp))
@@ -440,7 +442,7 @@ private fun Notice(text: String, actionLabel: String, onAction: () -> Unit) {
 @Composable
 private fun ReminderCard(item: CommitmentEntity, now: Long, completed: Boolean,
     onEdit: () -> Unit, onComplete: () -> Unit, onSnooze: () -> Unit,
-    onArchive: () -> Unit, onDelete: () -> Unit) {
+    onFollowUp: (Long) -> Unit, onArchive: () -> Unit, onDelete: () -> Unit) {
     var menuOpen by remember { mutableStateOf(false) }
     var deletePrompt by remember(item.id) { mutableStateOf(false) }
     val accent = when {
@@ -498,9 +500,19 @@ private fun ReminderCard(item: CommitmentEntity, now: Long, completed: Boolean,
                         if (item.dueAtMillis != null) DropdownMenuItem(
                             text = { Text("Remind in 10 minutes") },
                             onClick = { menuOpen = false; onSnooze() })
+                        DropdownMenuItem(text = { Text("Follow up tomorrow") },
+                            onClick = { menuOpen = false; onFollowUp(1) })
+                        DropdownMenuItem(text = { Text("Follow up next week") },
+                            onClick = { menuOpen = false; onFollowUp(7) })
                         DropdownMenuItem(text = { Text("Archive") },
                             onClick = { menuOpen = false; onArchive() })
                         HorizontalDivider()
+                    }
+                    if (completed) {
+                        DropdownMenuItem(text = { Text("Follow up tomorrow") },
+                            onClick = { menuOpen = false; onFollowUp(1) })
+                        DropdownMenuItem(text = { Text("Follow up next week") },
+                            onClick = { menuOpen = false; onFollowUp(7) })
                     }
                     DropdownMenuItem(
                         text = { Text("Delete", color = coral) },

@@ -19,3 +19,5 @@ The current flow has one alert per reminder. Internally, the canonical record re
 - Enable Floating Cue, press Home, switch apps, rotate the device, and reopen Cue. Confirm the bubble remains visible and retains its position.
 - Lock the phone: bubble actions must not accept taps or drops. The ongoing notification should offer “Unlock to use Cue” where lock-screen notification visibility is enabled. After unlocking, confirm the bubble is available again. Secure keyguards can hide application overlays by Android design.
 - With Floating Cue enabled, kill the process through Android's normal background eviction and check the sticky service restore. Force-stop and manufacturer battery restrictions can prevent automatic restarts.
+
+- Use a reminder's three-dot menu → Follow up tomorrow and next week. Confirm one reminder remains, with an alert at the chosen local date and the original time of day. Complete it, follow up again from Completed, and confirm it returns to active with a 9 am alert. Inbox should record each follow-up; cancelling/deleting the reminder must cancel its pending alarm. Test an untimed reminder (default follow-up time is 9 am).
