@@ -44,7 +44,7 @@ class ReminderScheduler(private val context: Context) {
     fun silence(item: CommitmentEntity) {
         context.getSystemService(NotificationManager::class.java).apply {
             cancel(item.id.hashCode())
-            ChainSchedule.offsetsMinutes.forEach { cancel(item.id.hashCode() xor it.toInt()) }
+            ChainSchedule.parse(item.chainOffsets).forEach { cancel(item.id.hashCode() xor it.toInt()) }
         }
         runCatching { context.startService(Intent(context, AlarmPlaybackService::class.java).apply {
             action = AlarmPlaybackService.ACTION_STOP
@@ -55,7 +55,7 @@ class ReminderScheduler(private val context: Context) {
     fun cancel(item: CommitmentEntity) {
         alarms.cancel(pending(item.id, item.dueAtMillis ?: 0L, PRIMARY))
         alarms.cancel(pending(item.id, item.dueAtMillis ?: 0L, BACKUP))
-        ChainSchedule.offsetsMinutes.forEach {
+        ChainSchedule.parse(item.chainOffsets).forEach {
             alarms.cancel(pending(item.id, item.dueAtMillis ?: 0L, CHAIN, it))
         }
     }
@@ -64,7 +64,8 @@ class ReminderScheduler(private val context: Context) {
         cancel(item)
         val due = item.dueAtMillis ?: return
         if (item.status != "active" || due <= System.currentTimeMillis()) return
-        if (item.chainEnabled) ChainSchedule.upcoming(due, System.currentTimeMillis())
+        if (item.chainEnabled) ChainSchedule.upcoming(due, System.currentTimeMillis(),
+            ChainSchedule.parse(item.chainOffsets))
             .forEach { (offset, at) ->
             if (!chainWasDelivered(item, offset))
                 alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at,
@@ -138,7 +139,7 @@ class ReminderReceiver : BroadcastReceiver() {
                     val item = CueDatabase.get(context).commitments().byId(id) ?: return@launch
                     if (!item.chainEnabled || item.status != "active" ||
                         item.dueAtMillis != intent.getLongExtra("due", -1L) ||
-                        offset !in listOf(60L, 1440L) ||
+                        offset !in ChainSchedule.parse(item.chainOffsets) ||
                         (item.ownerId != "guest" && item.ownerId != scheduler.activeOwnerId())) return@launch
                     var delivered = false
                     synchronized(deliveryLock) {

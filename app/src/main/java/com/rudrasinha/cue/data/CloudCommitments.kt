@@ -24,6 +24,7 @@ private data class CloudCommitment(
     val timezone: String,
     @SerialName("tone_id") val toneId: String,
     @SerialName("chain_enabled") val chainEnabled: Boolean = false,
+    @SerialName("chain_offsets") val chainOffsets: String = "1440,60",
     val status: String,
     @SerialName("updated_at") val updatedAt: String
 )
@@ -165,6 +166,7 @@ class CloudCommitments(private val database: CueDatabase, private val client: Su
                     .put("details", local.details).put("due_at_millis", local.dueAtMillis)
                     .put("timezone", local.timezone).put("tone_id", local.toneId)
                     .put("chain_enabled", local.chainEnabled)
+                    .put("chain_offsets", local.chainOffsets)
                     .put("winner_updated_at", remote.updatedAt).toString()
                 val applied = database.withTransaction {
                     // A newer local edit can appear while the network request is in flight.
@@ -228,6 +230,7 @@ private fun CommitmentEntity.toCloud(userId: String) = CloudCommitment(
     timezone = timezone,
     toneId = toneId,
     chainEnabled = chainEnabled,
+    chainOffsets = chainOffsets,
     status = status,
     updatedAt = Instant.ofEpochMilli(updatedAtMillis).toString()
 )
@@ -243,6 +246,7 @@ private fun CloudCommitment.toLocal() = CommitmentEntity(
     updatedAtMillis = Instant.parse(updatedAt).toEpochMilli(),
     toneId = toneId,
     chainEnabled = chainEnabled,
+    chainOffsets = chainOffsets,
     syncedAtMillis = Instant.parse(updatedAt).toEpochMilli()
 )
 
@@ -250,7 +254,8 @@ private fun CloudCommitment.matches(local: CommitmentEntity) =
     title == local.title && details == local.details &&
         dueAt?.let { Instant.parse(it).toEpochMilli() } == local.dueAtMillis &&
         timezone == local.timezone && toneId == local.toneId &&
-        chainEnabled == local.chainEnabled && status == local.status &&
+        chainEnabled == local.chainEnabled && chainOffsets == local.chainOffsets &&
+        status == local.status &&
         Instant.parse(updatedAt).toEpochMilli() == local.updatedAtMillis
 
 private fun SourceEntity.toCloud(userId: String) = CloudSource(

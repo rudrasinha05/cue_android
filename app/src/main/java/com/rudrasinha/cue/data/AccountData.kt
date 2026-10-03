@@ -30,6 +30,7 @@ class AccountData(private val database: CueDatabase, private val scheduler: Remi
                     .put("due_at_millis", item.dueAtMillis ?: JSONObject.NULL)
                     .put("timezone", item.timezone).put("status", item.status)
                     .put("tone_id", item.toneId).put("chain_enabled", item.chainEnabled)
+                    .put("chain_offsets", item.chainOffsets)
                     .put("updated_at_millis", item.updatedAtMillis))
             } })
             .put("sources", JSONArray().apply { sources.forEach { source ->

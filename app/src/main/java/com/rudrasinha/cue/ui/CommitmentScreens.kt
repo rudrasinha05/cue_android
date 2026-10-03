@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import com.rudrasinha.cue.data.CommitmentEntity
 import com.rudrasinha.cue.data.CaptureOrigin
 import com.rudrasinha.cue.reminders.ReminderTones
+import com.rudrasinha.cue.reminders.ChainSchedule
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -81,7 +82,7 @@ fun CommitmentListScreen(
     onExactAccess: () -> Unit, onNotificationAccess: () -> Unit,
     defaultTone: String, onSave: (String?, String, String?, Long?, CaptureOrigin, String) -> Unit,
     onComplete: (String) -> Unit, onSnooze: (String) -> Unit,
-    onFollowUp: (String, Long) -> Unit, onChain: (String, Boolean) -> Unit,
+    onFollowUp: (String, Long) -> Unit, onChain: (String, List<Long>?) -> Unit,
     onArchive: (String) -> Unit,
     onDelete: (String) -> Unit,
     signedIn: Boolean, onSync: () -> Unit, onSettings: () -> Unit,
@@ -310,7 +311,7 @@ fun CommitmentListScreen(
                                         onComplete = { onComplete(item.id) },
                                         onSnooze = { onSnooze(item.id) },
                                         onFollowUp = { days -> onFollowUp(item.id, days) },
-                                        onChain = { enabled -> onChain(item.id, enabled) },
+                                        onChain = { offsets -> onChain(item.id, offsets) },
                                         onArchive = { onArchive(item.id) },
                                         onDelete = { onDelete(item.id) })
                                     Spacer(Modifier.height(10.dp))
@@ -410,7 +411,7 @@ private fun Notice(text: String, actionLabel: String, onAction: () -> Unit) {
 @Composable
 private fun ReminderCard(item: CommitmentEntity, now: Long, completed: Boolean,
     onEdit: () -> Unit, onComplete: () -> Unit, onSnooze: () -> Unit,
-    onFollowUp: (Long) -> Unit, onChain: (Boolean) -> Unit,
+    onFollowUp: (Long) -> Unit, onChain: (List<Long>?) -> Unit,
     onArchive: () -> Unit, onDelete: () -> Unit) {
     var menuOpen by remember { mutableStateOf(false) }
     var deletePrompt by remember(item.id) { mutableStateOf(false) }
@@ -453,7 +454,9 @@ private fun ReminderCard(item: CommitmentEntity, now: Long, completed: Boolean,
                     Text(label, color = accent, style = MaterialTheme.typography.labelSmall,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                if (item.chainEnabled && !completed) Text("Nudges · 1 day + 1 hour before",
+                if (item.chainEnabled && !completed) Text("Nudges · " +
+                    (ChainSchedule.presets.entries.firstOrNull {
+                        it.value == ChainSchedule.parse(item.chainOffsets) }?.key ?: "Custom"),
                     color = muted, style = MaterialTheme.typography.labelSmall)
             }
             Box {
@@ -468,10 +471,18 @@ private fun ReminderCard(item: CommitmentEntity, now: Long, completed: Boolean,
                         if (item.dueAtMillis != null) DropdownMenuItem(
                             text = { Text("Remind in 10 minutes") },
                             onClick = { menuOpen = false; onSnooze() })
-                        if (item.chainEnabled || (item.dueAtMillis != null && item.dueAtMillis > now)) DropdownMenuItem(
-                            text = { Text(if (item.chainEnabled) "Turn off extra nudges" else
-                                "Add 1 day + 1 hour nudges") },
-                            onClick = { menuOpen = false; onChain(!item.chainEnabled) })
+                        if (item.chainEnabled) DropdownMenuItem(
+                            text = { Text("Turn off extra nudges") },
+                            onClick = { menuOpen = false; onChain(null) })
+                        if (item.dueAtMillis != null && item.dueAtMillis > now) {
+                            ChainSchedule.presets.forEach { (label, offsets) ->
+                                DropdownMenuItem(text = { Text("Nudges · $label") },
+                                    trailingIcon = { if (item.chainEnabled &&
+                                        ChainSchedule.parse(item.chainOffsets) == offsets)
+                                        Icon(Icons.Filled.Check, null) },
+                                    onClick = { menuOpen = false; onChain(offsets) })
+                            }
+                        }
                         DropdownMenuItem(text = { Text("Follow up tomorrow") },
                             onClick = { menuOpen = false; onFollowUp(1) })
                         DropdownMenuItem(text = { Text("Follow up next week") },

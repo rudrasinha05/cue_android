@@ -3,6 +3,7 @@ package com.rudrasinha.cue.data
 import androidx.room.withTransaction
 import com.rudrasinha.cue.reminders.ReminderScheduler
 import com.rudrasinha.cue.reminders.ReminderTones
+import com.rudrasinha.cue.reminders.ChainSchedule
 import org.json.JSONObject
 import java.time.ZoneId
 import java.util.UUID
@@ -36,6 +37,7 @@ class CommitmentActions(
             updatedAtMillis = maxOf(now, (old?.updatedAtMillis ?: 0L) + 1),
             dirty = ownerId != "guest", toneId = ReminderTones.selected(toneId).id,
             chainEnabled = old?.chainEnabled ?: false,
+            chainOffsets = old?.chainOffsets ?: "1440,60",
             syncedAtMillis = old?.syncedAtMillis ?: 0L
         )
         database.withTransaction {
@@ -48,7 +50,7 @@ class CommitmentActions(
             ))
             database.history().insertEvent(event(item, if (old == null) "created" else "updated"))
         }
-        if (old != null) scheduler.silence(old)
+        if (old != null) { scheduler.cancel(old); scheduler.silence(old) }
         scheduler.schedule(item)
         return sync(ownerId)
     }
@@ -83,12 +85,13 @@ class CommitmentActions(
         it.copy(status = "archived", dueAtMillis = null)
     }
 
-    suspend fun setChain(ownerId: String, id: String, enabled: Boolean): Boolean =
+    suspend fun setChain(ownerId: String, id: String, offsets: List<Long>?): Boolean =
         change(ownerId, id, "chain_changed") { old ->
-            require(!enabled || (old.dueAtMillis != null && old.dueAtMillis > System.currentTimeMillis())) {
+            require(offsets == null || (old.dueAtMillis != null && old.dueAtMillis > System.currentTimeMillis())) {
                 "Add a future time before enabling reminder nudges."
             }
-            old.copy(chainEnabled = enabled)
+            old.copy(chainEnabled = offsets != null,
+                chainOffsets = offsets?.let(ChainSchedule::encode) ?: old.chainOffsets)
         }
 
     suspend fun snooze(ownerId: String, id: String): Boolean = change(ownerId, id, "snoozed") {
@@ -129,6 +132,7 @@ class CommitmentActions(
             dao.upsert(listOf(next))
             database.history().insertEvent(event(next, type))
         }
+        scheduler.cancel(old)
         scheduler.silence(old)
         scheduler.schedule(next)
         return sync(ownerId)
@@ -145,7 +149,7 @@ class CommitmentActions(
         val snapshot = JSONObject().put("title", item.title).put("status", item.status)
             .put("details", item.details).put("due_at_millis", item.dueAtMillis)
             .put("timezone", item.timezone).put("tone_id", item.toneId)
-            .put("chain_enabled", item.chainEnabled).toString()
+            .put("chain_enabled", item.chainEnabled).put("chain_offsets", item.chainOffsets).toString()
         return ReminderEventEntity(id, item.ownerId, item.id, type, snapshot, "app", id,
             item.updatedAtMillis, item.ownerId != "guest")
     }
