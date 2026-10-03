@@ -36,6 +36,21 @@ class CaptureIntake(private val context: Context) {
         val candidate = LocalReminderInterpreter.find(content)
         val title = candidate?.title ?: content.lineSequence()
             .firstOrNull { it.isNotBlank() }?.trim()?.take(100) ?: "New reminder"
+        // An explicit bubble entry is a manual reminder even when no time can be inferred.
+        if (candidate == null && type == "bubble") {
+            val ownerId = ReminderScheduler(context).activeOwnerId() ?: "guest"
+            val database = CueDatabase.get(context)
+            val tone = ThemeStore(context).reminderTone.first()
+            val scheduler = ReminderScheduler(context)
+            val actions = CommitmentActions(database, scheduler,
+                CloudCommitments(database, CueAuth(context).client, scheduler))
+            saveLock.withLock {
+                actions.save(ownerId, null, title, content.take(2000), null,
+                    CaptureOrigin(type, "Floating Cue", content.take(2000)), tone)
+            }
+            acknowledge("Reminder saved", "$title · No alert set")
+            return true
+        }
         if (candidate == null) {
             if (type == "screen") return false // Ignore uncertain background content without interrupting the user.
             acknowledge("Review a possible reminder", title,

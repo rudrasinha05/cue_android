@@ -221,6 +221,7 @@ private fun CueApp(
     val actions = remember { CommitmentActions(database, scheduler, cloud) }
     val scope = rememberCoroutineScope()
     var selected by rememberSaveable { mutableStateOf(Tab.TODAY) }
+    var settingsOpen by rememberSaveable { mutableStateOf(false) }
     var todayFocusToken by remember { mutableIntStateOf(0) }
     var actionSheetOpen by remember { mutableStateOf(false) }
     var dayPlanOpen by remember { mutableStateOf(false) }
@@ -406,7 +407,7 @@ private fun CueApp(
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document"))
             CueAction.ASK -> selected = Tab.AI
             CueAction.DAY -> { selected = Tab.TODAY; todayFocusToken++; dayPlanOpen = true }
-            CueAction.SETTINGS -> selected = Tab.YOU
+            CueAction.SETTINGS -> { selected = Tab.YOU; settingsOpen = true }
         }
     }
     LaunchedEffect(shortcutAction) {
@@ -497,7 +498,7 @@ private fun CueApp(
                     Tab.entries.forEach { tab ->
                         NavigationBarItem(
                             selected = selected == tab,
-                            onClick = { selected = tab },
+                            onClick = { selected = tab; settingsOpen = false },
                             icon = { Icon(tab.icon, contentDescription = null) },
                             label = { Text(tab.label) }
                         )
@@ -547,7 +548,7 @@ private fun CueApp(
                             } finally { accountBusy = false }
                         }
                     },
-                    { selected = Tab.YOU },
+                    { selected = Tab.YOU; settingsOpen = true },
                     { dayPlanOpen = true },
                     captureDraft, onCaptureDismiss, todayFocusToken,
                     Modifier.padding(padding)
@@ -568,6 +569,9 @@ private fun CueApp(
                     }.isSuccess
                 }, modifier = Modifier.padding(padding))
                 Tab.YOU -> YouScreen(
+                    settingsOpen, { settingsOpen = it },
+                    (session as? SessionStatus.Authenticated)?.session?.user?.email,
+                    userId,
                     theme, colorTheme,
                     { scope.launch { themeStore.set(it) } },
                     { scope.launch { themeStore.setColorTheme(it) } },
@@ -765,6 +769,10 @@ private fun EmptyScreen(title: String, description: String, icon: ImageVector, p
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun YouScreen(
+    settingsOpen: Boolean,
+    onSettingsOpen: (Boolean) -> Unit,
+    accountEmail: String?,
+    accountId: String?,
     theme: ThemePreference,
     colorTheme: ColorTheme,
     onTheme: (ThemePreference) -> Unit,
@@ -804,11 +812,17 @@ private fun YouScreen(
 ) {
     var deleteDataPrompt by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(24.dp)) {
-        Text("Your space", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+        if (settingsOpen) androidx.compose.material3.TextButton(onClick = { onSettingsOpen(false) }) {
+            Text("←  Back to You")
+        }
+        Text(if (settingsOpen) "Settings" else "Your space",
+            style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(8.dp))
-        Text("Account and appearance, just the way you like it.",
+        Text(if (settingsOpen) "Customize how Cue works for you."
+            else "Your account and daily schedule.",
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(22.dp))
+        if (!settingsOpen) {
         Card(shape = RoundedCornerShape(24.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
@@ -816,6 +830,13 @@ private fun YouScreen(
                 Text(if (signedIn) "Your reminders are synced" else "Your reminders stay on this device",
                     style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(5.dp))
+                if (signedIn) {
+                    Text(accountEmail ?: "Google account", style = MaterialTheme.typography.bodyLarge)
+                    accountId?.let { Text("Account ID · ${it.take(8)}…",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    Spacer(Modifier.height(8.dp))
+                }
                 Text(if (signedIn) "Your Google account keeps your reminders available when you return."
                     else "Sign in with Google to save and restore them across devices.",
                     style = MaterialTheme.typography.bodyMedium,
@@ -839,10 +860,18 @@ private fun YouScreen(
                     onClick = { deleteDataPrompt = true }, enabled = !accountBusy) {
                     Text(if (signedIn) "Delete my Cue data everywhere" else "Delete reminders on this device")
                 }
+                if (signedIn) Text("Cue login profile deletion is not available yet. This button deletes Cue data, not your Google account.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
+        Spacer(Modifier.height(18.dp))
+        Button(onClick = { onSettingsOpen(true) }) { Text("Open settings") }
+        Spacer(Modifier.height(20.dp))
+        }
+        if (settingsOpen) {
         Spacer(Modifier.height(32.dp))
-        Text("Cue controls", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        Text("Bubble and shortcuts", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(8.dp))
         Text("Bring your six shortcuts to other apps or your notification panel.",
             color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -904,6 +933,9 @@ private fun YouScreen(
             }
         }
         Spacer(Modifier.height(32.dp))
+        Text("Alerts and sounds", style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(12.dp))
         ReminderTonePicker(reminderTone, onReminderTone)
         Spacer(Modifier.height(16.dp))
         if (!fullScreenAllowed) Card(shape = RoundedCornerShape(22.dp),
@@ -918,6 +950,8 @@ private fun YouScreen(
             }
         }
         Spacer(Modifier.height(32.dp))
+        } // Bubble, alerts and sound settings
+        if (!settingsOpen) {
         Text("Daily schedule", style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(8.dp))
@@ -974,11 +1008,14 @@ private fun YouScreen(
                     })
             }
         }
+        }
+        if (settingsOpen) {
         Spacer(Modifier.height(32.dp))
-        Text("Screen analysis", style = MaterialTheme.typography.titleLarge,
+        Text("Screen and notification analysis", style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(8.dp))
-        Text("Choose what to share in Android's picker. Consent is required each session.",
+        Text("Choose what to share in Android's picker. Android shows a screen-sharing indicator " +
+            "while analysis is active; Cue cannot hide it. Consent is required each session.",
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(16.dp))
         Card(shape = RoundedCornerShape(24.dp),
@@ -1071,6 +1108,7 @@ private fun YouScreen(
             }
         }
         Spacer(Modifier.height(12.dp))
+        } // Settings
     }
     if (deleteDataPrompt) androidx.compose.material3.AlertDialog(
         onDismissRequest = { deleteDataPrompt = false },

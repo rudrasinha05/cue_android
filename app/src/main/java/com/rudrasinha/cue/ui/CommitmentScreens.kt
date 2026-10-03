@@ -225,23 +225,41 @@ fun CommitmentListScreen(
                         Text("Today", color = violet)
                     }
                 } else {
-                    val categories = listOf(ReminderView.TODAY, ReminderView.SCHEDULED,
-                        ReminderView.PAST, ReminderView.NO_ALERT,
-                        ReminderView.COMPLETED, ReminderView.ALL)
-                    BoxWithConstraints(Modifier.fillMaxWidth()) {
-                        val columns = if (maxWidth >= 340.dp) 3 else 2
-                        Column {
-                            categories.chunked(columns).forEach { row ->
-                                Row(Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    row.forEach { view ->
-                                        CategoryCard(view, matching(view).size,
-                                            selectedView == view, columns == 3,
-                                            Modifier.weight(1f)) { selectedView = view }
-                                    }
-                                }
-                                Spacer(Modifier.height(10.dp))
+                    val next = active.filter { (it.dueAtMillis ?: 0L) > now }
+                        .minByOrNull { it.dueAtMillis ?: Long.MAX_VALUE }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Surface(onClick = { selectedView = ReminderView.TODAY },
+                            modifier = Modifier.weight(1f).height(132.dp),
+                            shape = RoundedCornerShape(24.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer) {
+                            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.SpaceBetween) {
+                                Text("Today", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                Text("${matching(ReminderView.TODAY).size} reminders",
+                                    style = MaterialTheme.typography.headlineSmall)
                             }
+                        }
+                        Surface(onClick = {
+                            if (next != null) selectedView = ReminderView.SCHEDULED else onDayPlan()
+                        }, modifier = Modifier.weight(1f).height(132.dp),
+                            shape = RoundedCornerShape(24.dp), color = cardColor,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+                            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.SpaceBetween) {
+                                Text("Next", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                Text(next?.title ?: "Your schedule is clear", maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
+                                next?.dueAtMillis?.let { Text(formatTime(it), color = violet,
+                                    style = MaterialTheme.typography.labelSmall) }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(16.dp))
+                    androidx.compose.foundation.lazy.LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(ReminderView.entries.size) { index ->
+                            val view = ReminderView.entries[index]
+                            FilterChip(selected = selectedView == view,
+                                onClick = { selectedView = view },
+                                label = { Text("${view.label} ${matching(view).size}") })
                         }
                     }
                     TextButton(onClick = onDayPlan,
@@ -331,7 +349,7 @@ fun CommitmentListScreen(
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
                 Row(Modifier.fillMaxSize().padding(horizontal = 24.dp),
                     verticalAlignment = Alignment.CenterVertically) {
-                    Text("Add reminder", color = ivory, style = MaterialTheme.typography.titleMedium,
+                    Text("+  Add reminder", color = ivory, style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.weight(1f))
                     Icon(Icons.Filled.Add, contentDescription = null, tint = violet)
                 }
@@ -591,7 +609,7 @@ private fun ReminderEditor(item: CommitmentEntity?, suggestedTitle: String, sugg
     var details by remember(item?.id, draftId) { mutableStateOf(item?.details ?: suggestedDetails) }
     var chosenTone by remember(item?.id, draftId) { mutableStateOf(item?.toneId ?: defaultTone) }
     var tonePickerOpen by remember { mutableStateOf(false) }
-    var alertEnabled by remember(item?.id) { mutableStateOf(initialDue != null) }
+    var alertEnabled by remember(item?.id, draftId) { mutableStateOf(initialDue != null || item == null) }
     var chosenDate by remember(item?.id) { mutableStateOf(initialDue?.toLocalDate() ?: startDate) }
     var month by remember(item?.id) { mutableStateOf(YearMonth.from(chosenDate)) }
     var showNote by remember(item?.id, draftId) { mutableStateOf(details.isNotBlank()) }
@@ -634,14 +652,12 @@ private fun ReminderEditor(item: CommitmentEntity?, suggestedTitle: String, sugg
                             }
                         })
                     Spacer(Modifier.width(14.dp))
-                    IconButton(onClick = { onSave(title.trim(), details.trim().ifBlank { null }, due, chosenTone) },
-                        enabled = valid,
-                        modifier = Modifier.size(52.dp).background(
-                            if (valid) violet else MaterialTheme.colorScheme.outlineVariant, CircleShape)) {
-                        Icon(Icons.Filled.Check, contentDescription = "Save reminder",
-                            tint = if (valid) MaterialTheme.colorScheme.onPrimary else muted,
-                            modifier = Modifier.size(28.dp))
-                    }
+                }
+                Spacer(Modifier.height(14.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Remind me", modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyMedium)
+                    Switch(checked = alertEnabled, onCheckedChange = { alertEnabled = it })
                 }
                 if (showNote) {
                     Spacer(Modifier.height(16.dp))
@@ -712,6 +728,11 @@ private fun ReminderEditor(item: CommitmentEntity?, suggestedTitle: String, sugg
                     }
                 }
                 Spacer(Modifier.height(24.dp))
+                Button(onClick = { onSave(title.trim(), details.trim().ifBlank { null }, due, chosenTone) },
+                    enabled = valid, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (item == null) "Save reminder" else "Save changes")
+                }
+                Spacer(Modifier.height(14.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     QuickAction(Icons.Outlined.Notes, "Add note", showNote) { showNote = !showNote }
                     QuickAction(Icons.Filled.CalendarMonth, "Choose date", showCalendar) {

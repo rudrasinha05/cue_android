@@ -21,6 +21,7 @@ import android.view.DragEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
+import android.widget.EditText
 import android.widget.TextView
 import com.rudrasinha.cue.CaptureIntake
 import com.rudrasinha.cue.importedText
@@ -41,6 +42,7 @@ class FloatingCueService : Service() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == Intent.ACTION_SCREEN_OFF) {
                 expanded = false
+                quickEntry = false
                 if (root != null) showWindow()
             } else if (intent.action == Intent.ACTION_USER_PRESENT && root != null) showWindow()
         }
@@ -50,6 +52,7 @@ class FloatingCueService : Service() {
     private val captureScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var root: FrameLayout? = null
     private var expanded = false
+    private var quickEntry = false
     private var rightEdge = true
     private var centerY = 0
     private var opacity = 0.82f
@@ -61,7 +64,7 @@ class FloatingCueService : Service() {
     private var onSurface = Color.WHITE
     private val size get() = dp(sizeDp)
     private val menuWidth get() = dp(260)
-    private val menuHeight get() = dp(390)
+    private val menuHeight get() = dp(if (quickEntry) 210 else 390)
     private val hidden get() = dp(14)
     private val screenWidth get() = resources.displayMetrics.widthPixels
     private val screenHeight get() = resources.displayMetrics.heightPixels
@@ -156,7 +159,10 @@ class FloatingCueService : Service() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        if (screenHeight < menuHeight + dp(76)) expanded = false
+        if (screenHeight < menuHeight + dp(76)) {
+            expanded = false
+            quickEntry = false
+        }
         showWindow()
     }
 
@@ -177,6 +183,11 @@ class FloatingCueService : Service() {
         if (!Settings.canDrawOverlays(this)) { stopSelf(); return }
         val width = if (expanded) menuWidth else size
         val height = if (expanded) menuHeight else size
+        windowParams.flags = if (quickEntry && expanded)
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+        else WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+        windowParams.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
         val minimum = height / 2 + dp(28)
         val maximum = screenHeight - height / 2 - dp(48)
         centerY = if (maximum >= minimum) centerY.coerceIn(minimum, maximum) else screenHeight / 2
@@ -188,7 +199,9 @@ class FloatingCueService : Service() {
         windowParams.y = centerY - height / 2
 
         val frame = FrameLayout(this)
-        if (expanded) addActions(frame)
+        if (expanded) {
+            if (quickEntry) addQuickEntry(frame) else addActions(frame)
+        }
         val bubble = TextView(this).apply {
             tag = "bubble"
             text = "cue"
@@ -207,13 +220,9 @@ class FloatingCueService : Service() {
             alpha = if (expanded) 1f else opacity
             setOnClickListener {
                 if (locked()) return@setOnClickListener
-                if (!expanded && screenHeight < menuHeight + dp(76)) {
-                    startActivity(AssistantControls.shortcutIntent(this@FloatingCueService,
-                        AssistantControls.OPEN_MENU))
-                } else {
-                    expanded = !expanded
-                    showWindow()
-                }
+                expanded = !expanded
+                if (!expanded) quickEntry = false
+                showWindow()
             }
         }
         bubble.setOnDragListener { view, event ->
@@ -263,7 +272,7 @@ class FloatingCueService : Service() {
             }
         }
         val bubbleX = if (expanded && rightEdge) width - size else 0
-        frame.addView(bubble, FrameLayout.LayoutParams(size, size).apply {
+        if (!(expanded && quickEntry)) frame.addView(bubble, FrameLayout.LayoutParams(size, size).apply {
             leftMargin = bubbleX
             topMargin = if (expanded) (height - size) / 2 else 0
         })
@@ -337,6 +346,11 @@ class FloatingCueService : Service() {
                 elevation = dp(8).toFloat()
                 setOnClickListener {
                     if (locked()) return@setOnClickListener
+                    if (action == CueAction.QUICK) {
+                        quickEntry = true
+                        showWindow()
+                        return@setOnClickListener
+                    }
                     expanded = false
                     showWindow()
                     startActivity(AssistantControls.shortcutIntent(this@FloatingCueService, action.key))
@@ -348,6 +362,57 @@ class FloatingCueService : Service() {
                 topMargin = dp(tops[index])
             })
         }
+    }
+
+    private fun addQuickEntry(frame: FrameLayout) {
+        val input = EditText(this).apply {
+            hint = "What should Cue remind you? Add a date or time."
+            textSize = 15f
+            setTextColor(onSurface)
+            setHintTextColor(onSurface)
+            background = GradientDrawable().apply {
+                setColor(surface); cornerRadius = dp(16).toFloat()
+            }
+            setPadding(dp(14), dp(8), dp(14), dp(8))
+            minLines = 2
+            maxLines = 3
+        }
+        frame.addView(input, FrameLayout.LayoutParams(menuWidth - dp(22), dp(100)).apply {
+            leftMargin = dp(11); topMargin = dp(12)
+        })
+        val save = TextView(this).apply {
+            text = "Save reminder"
+            gravity = Gravity.CENTER
+            setTextColor(onAccent)
+            background = GradientDrawable().apply {
+                setColor(accent); cornerRadius = dp(16).toFloat()
+            }
+            setOnClickListener {
+                val value = input.text.toString().trim()
+                if (value.isBlank()) { input.error = "Write a reminder first"; return@setOnClickListener }
+                quickEntry = false
+                expanded = false
+                showWindow()
+                captureScope.launch {
+                    try { CaptureIntake(applicationContext).accept(value, "bubble") }
+                    catch (e: Exception) {
+                        CaptureIntake(applicationContext).failure(e.message ?: "Could not save your reminder.")
+                    }
+                }
+            }
+        }
+        frame.addView(save, FrameLayout.LayoutParams(menuWidth - dp(22), dp(48)).apply {
+            leftMargin = dp(11); topMargin = dp(120)
+        })
+        val cancel = TextView(this).apply {
+            text = "Cancel"
+            gravity = Gravity.CENTER
+            setTextColor(onSurface)
+            setOnClickListener { quickEntry = false; expanded = true; showWindow() }
+        }
+        frame.addView(cancel, FrameLayout.LayoutParams(menuWidth - dp(22), dp(34)).apply {
+            leftMargin = dp(11); topMargin = dp(172)
+        })
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
