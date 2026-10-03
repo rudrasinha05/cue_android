@@ -63,9 +63,13 @@ private data class CloudHistoryBatch(
     @SerialName("event_count") val eventCount: Int,
     val checksum: String,
     @SerialName("payload_base64") val payloadBase64: String,
+    @SerialName("event_ids") val eventIds: List<String> = emptyList(),
     @SerialName("search_index") val searchIndex: String,
     @SerialName("created_at_millis") val createdAtMillis: Long
 )
+
+@Serializable
+private data class PruneBatchParams(@SerialName("batch_id") val batchId: String)
 
 class CloudCommitments(private val database: CueDatabase, private val client: SupabaseClient,
     private val scheduler: ReminderScheduler) {
@@ -196,14 +200,17 @@ class CloudCommitments(private val database: CueDatabase, private val client: Su
         }
         HistoryArchive(database).compact(userId)
         history.batches(userId).forEach { batch ->
+            val eventIds = HistoryArchive.read(batch).map { it.id }
             val existing = client.from("history_batches").select {
                 filter { eq("id", batch.id); eq("user_id", userId) }
             }.decodeList<CloudHistoryBatch>().singleOrNull()
             if (existing == null) {
-                HistoryArchive.read(batch)
-                client.from("history_batches").insert(batch.toCloud(userId))
+                client.from("history_batches").insert(batch.toCloud(userId, eventIds))
             } else require(existing.checksum == batch.checksum &&
                 existing.eventCount == batch.eventCount) { "Cloud history archive differs from this device." }
+            // Older batches without server-stored IDs retain their raw recovery copies.
+            if (existing == null || existing.eventIds == eventIds)
+                client.postgrest.rpc("prune_my_archived_events", PruneBatchParams(batch.id))
         }
     }
 
@@ -278,9 +285,9 @@ private fun CloudEvent.toLocal() = ReminderEventEntity(
     Instant.parse(occurredAt).toEpochMilli()
 )
 
-private fun HistoryBatchEntity.toCloud(userId: String) = CloudHistoryBatch(
+private fun HistoryBatchEntity.toCloud(userId: String, eventIds: List<String>) = CloudHistoryBatch(
     id, userId, firstAtMillis, lastAtMillis, eventCount, checksum,
-    Base64.encodeToString(payload, Base64.NO_WRAP), searchIndex, createdAtMillis
+    Base64.encodeToString(payload, Base64.NO_WRAP), eventIds, searchIndex, createdAtMillis
 )
 
 private fun CloudHistoryBatch.toLocal(expectedOwner: String): HistoryBatchEntity {
