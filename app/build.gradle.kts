@@ -6,6 +6,16 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+val uploadStorePath = providers.environmentVariable("CUE_UPLOAD_KEYSTORE").orNull
+val uploadStorePassword = providers.environmentVariable("CUE_UPLOAD_STORE_PASSWORD").orNull
+val uploadKeyAlias = providers.environmentVariable("CUE_UPLOAD_KEY_ALIAS").orNull
+val uploadKeyPassword = providers.environmentVariable("CUE_UPLOAD_KEY_PASSWORD").orNull
+val uploadValues = listOf(uploadStorePath, uploadStorePassword, uploadKeyAlias, uploadKeyPassword)
+check(uploadValues.all { it.isNullOrBlank() } || uploadValues.all { !it.isNullOrBlank() }) {
+    "Set all four CUE_UPLOAD_* environment variables to sign a release, or none for an unsigned build."
+}
+val uploadSigningReady = uploadValues.all { !it.isNullOrBlank() }
+
 android {
     namespace = "com.rudrasinha.cue"
     compileSdk = 35
@@ -23,9 +33,19 @@ android {
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleClientId\"")
     }
 
+    signingConfigs {
+        if (uploadSigningReady) create("cueUpload") {
+            storeFile = file(uploadStorePath!!)
+            storePassword = uploadStorePassword
+            keyAlias = uploadKeyAlias
+            keyPassword = uploadKeyPassword
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (uploadSigningReady) signingConfig = signingConfigs.getByName("cueUpload")
         }
     }
 

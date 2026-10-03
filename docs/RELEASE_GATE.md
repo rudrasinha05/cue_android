@@ -15,3 +15,9 @@
 - Complete Play Console declarations for exact alarms, full-screen alarm intents, overlay, foreground services, notification listener and per-session screen projection; verify the final permission copy and store listing/privacy policy.
 - Provider-backed Ask AI and opt-in email access require separate service configuration and explicit data-sharing scope. Signed-in cloud deletion requires a reviewed owner-scoped backend path. Do not claim these features are live while blocked.
 - Only after device acceptance and a signed bundle, merge the accepted `develop` commit to `main` and start Play internal testing.
+
+### Build a signed candidate on the owner's computer
+
+In Android Studio, use **Build → Generate Signed Bundle / APK → Android App Bundle** to create or select the private upload key. Back up the keystore, alias and passwords securely outside this repository. Gradle also supports a local signed build when all four environment variables are set: `CUE_UPLOAD_KEYSTORE` (absolute path to `.jks`), `CUE_UPLOAD_STORE_PASSWORD`, `CUE_UPLOAD_KEY_ALIAS`, and `CUE_UPLOAD_KEY_PASSWORD`. With none set, `:app:bundleRelease` deliberately remains unsigned. A partial set fails the build.
+
+On Windows PowerShell, set the four variables for that terminal session, then run `./gradlew.bat :app:bundleRelease`. The resulting bundle is `app/build/outputs/bundle/release/app-release.aab`. Verify its signer with `jarsigner -verify -certs -verbose` and compare the upload certificate fingerprint with Play Console before uploading. Do not paste the keystore or passwords into chat, source files, or GitHub issues. The repository ignores `.jks`, `.keystore`, `.aab` and local build outputs.
