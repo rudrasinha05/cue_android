@@ -247,8 +247,9 @@ class FloatingCueService : Service() {
                     val intake = CaptureIntake(applicationContext)
                     (0 until minOf(clip.itemCount, 8)).forEach { index ->
                         val item = clip.getItemAt(index)
-                        val uri = item.uri
-                        val text = item.text?.toString() ?: item.htmlText?.let {
+                        val uri = item.uri ?: item.intent?.data
+                        val text = item.text?.toString() ?: item.intent
+                            ?.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString() ?: item.htmlText?.let {
                             android.text.Html.fromHtml(it, android.text.Html.FROM_HTML_MODE_COMPACT).toString()
                         }
                         captureScope.launch {
@@ -259,7 +260,7 @@ class FloatingCueService : Service() {
                                 } else if (!text.isNullOrBlank()) intake.accept(text, "drop")
                                 else intake.failure("This app didn't provide readable data. Try Share → Cue.")
                             } catch (_: SecurityException) {
-                                intake.failure("The source app did not grant image access. Use Share → Cue.")
+                                intake.failure("This app did not grant Cue access to that file. Use Share → Cue instead.")
                             } catch (e: Exception) {
                                 intake.failure(e.message ?: "Try sharing this item with Cue instead.")
                             }

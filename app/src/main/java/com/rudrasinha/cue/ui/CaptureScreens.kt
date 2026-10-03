@@ -110,7 +110,7 @@ fun CaptureHub(onVoice: () -> Unit, onDocument: () -> Unit, onQuick: () -> Unit,
             "Write it down and add a date if you need one.", onQuick)
         Spacer(Modifier.height(12.dp))
         CaptureOption(Icons.Filled.Description, "Import a document",
-            "Read text, tables, DOCX, PDF or an image and review it.", onDocument)
+            "Read TXT, CSV, DOCX, XLSX, PDF or an image and review it.", onDocument)
         Spacer(Modifier.height(24.dp))
         Text("You can also share text from another app or select text and tap Cue.",
             color = subdued, style = MaterialTheme.typography.bodyMedium)

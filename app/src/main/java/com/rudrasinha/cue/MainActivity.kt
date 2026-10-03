@@ -404,7 +404,8 @@ private fun CueApp(
             CueAction.IMPORT -> documentLauncher.launch(arrayOf("text/plain", "text/csv",
                 "text/tab-separated-values", "text/markdown", "application/pdf", "image/jpeg",
                 "image/png", "image/webp",
-                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"))
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
             CueAction.ASK -> selected = Tab.AI
             CueAction.DAY -> { selected = Tab.TODAY; todayFocusToken++; dayPlanOpen = true }
             CueAction.SETTINGS -> { selected = Tab.YOU; settingsOpen = true }

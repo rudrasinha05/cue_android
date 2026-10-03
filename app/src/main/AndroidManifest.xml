@@ -38,6 +38,7 @@
                 <data android:mimeType="image/*" />
                 <data android:mimeType="application/pdf" />
                 <data android:mimeType="application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+                <data android:mimeType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.PROCESS_TEXT" />

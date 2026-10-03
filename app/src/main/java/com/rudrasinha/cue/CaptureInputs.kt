@@ -48,13 +48,16 @@ internal fun importedText(context: Context, uri: Uri): CaptureDraft {
     } else if (mime == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
         name.endsWith(".docx", ignoreCase = true)) {
         resolver.openInputStream(uri)?.use(::extractDocx)
+    } else if (mime == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+        name.endsWith(".xlsx", ignoreCase = true)) {
+        resolver.openInputStream(uri)?.use(::extractXlsx)
     } else if (mime.startsWith("text/") || mime == "application/csv" ||
         name.endsWith(".csv", true) || name.endsWith(".tsv", true) ||
         name.endsWith(".md", true)) {
         resolver.openInputStream(uri)?.use { it.readLimited(64 * 1024).toString(Charsets.UTF_8) }
     } else null
     val text = documentText?.trim()?.take(4000)?.takeIf { it.isNotEmpty() }
-        ?: error("No readable text found. Try a clearer image or a text, PDF or DOCX file.")
+        ?: error("No readable text found. Try a clearer image or a TXT, CSV, PDF, DOCX or XLSX file.")
     return CaptureDraft(UUID.randomUUID().toString(), text,
         CaptureOrigin(if (isImage) "image" else "document", name, text, uri.toString()))
 }
@@ -115,6 +118,62 @@ private fun extractDocx(input: InputStream): String {
         }
     }
     return ""
+}
+
+/** Extract bounded visible cell values from XLSX without loading a workbook into memory. */
+internal fun extractXlsx(input: InputStream): String {
+    val shared = mutableListOf<String>()
+    val sheets = mutableListOf<ByteArray>()
+    ZipInputStream(input).use { zip ->
+        while (true) {
+            val entry = zip.nextEntry ?: break
+            when {
+                entry.name == "xl/sharedStrings.xml" -> {
+                    val xml = Xml.newPullParser()
+                    xml.setInput(ByteArrayInputStream(zip.readLimited(512 * 1024)), "UTF-8")
+                    var part = StringBuilder()
+                    var event = xml.eventType
+                    while (event != XmlPullParser.END_DOCUMENT && shared.size < 10_000) {
+                        if (event == XmlPullParser.START_TAG && xml.name == "t")
+                            part.append(xml.nextText())
+                        if (event == XmlPullParser.END_TAG && xml.name == "si") {
+                            shared.add(part.toString()); part = StringBuilder()
+                        }
+                        event = xml.next()
+                    }
+                }
+                Regex("xl/worksheets/sheet\\d+\\.xml").matches(entry.name) && sheets.size < 5 ->
+                    sheets.add(zip.readLimited(512 * 1024))
+            }
+            if (sheets.size == 5 && shared.size >= 10_000) break
+        }
+    }
+    val output = StringBuilder()
+    sheets.forEachIndexed { index, bytes ->
+        if (output.length >= 4000) return@forEachIndexed
+        output.append("Sheet ${index + 1}\n")
+        val xml = Xml.newPullParser()
+        xml.setInput(ByteArrayInputStream(bytes), "UTF-8")
+        var cellType = ""
+        var value = ""
+        var event = xml.eventType
+        while (event != XmlPullParser.END_DOCUMENT && output.length < 4000) {
+            if (event == XmlPullParser.START_TAG) when (xml.name) {
+                "c" -> { cellType = xml.getAttributeValue(null, "t").orEmpty(); value = "" }
+                "v", "t" -> value += xml.nextText()
+            }
+            if (event == XmlPullParser.END_TAG) when (xml.name) {
+                "c" -> {
+                    val shown = if (cellType == "s") shared.getOrNull(value.toIntOrNull() ?: -1)
+                        .orEmpty() else value
+                    if (shown.isNotBlank()) output.append(shown.take(200)).append("  ")
+                }
+                "row" -> output.append('\n')
+            }
+            event = xml.next()
+        }
+    }
+    return output.toString().take(4000)
 }
 
 private fun InputStream.readLimited(limit: Int): ByteArray {
