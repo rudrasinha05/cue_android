@@ -13,6 +13,8 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 @Serializable
 private data class CloudCommitment(
@@ -67,9 +69,6 @@ private data class CloudHistoryBatch(
     @SerialName("search_index") val searchIndex: String,
     @SerialName("created_at_millis") val createdAtMillis: Long
 )
-
-@Serializable
-private data class PruneBatchParams(@SerialName("batch_id") val batchId: String)
 
 class CloudCommitments(private val database: CueDatabase, private val client: SupabaseClient,
     private val scheduler: ReminderScheduler) {
@@ -210,7 +209,9 @@ class CloudCommitments(private val database: CueDatabase, private val client: Su
                 existing.eventCount == batch.eventCount) { "Cloud history archive differs from this device." }
             // Older batches without server-stored IDs retain their raw recovery copies.
             if (existing == null || existing.eventIds == eventIds)
-                client.postgrest.rpc("prune_my_archived_events", PruneBatchParams(batch.id))
+                client.postgrest.rpc("prune_my_archived_events", buildJsonObject {
+                    put("batch_id", batch.id)
+                })
         }
     }
 
