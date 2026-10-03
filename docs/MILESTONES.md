@@ -1,24 +1,17 @@
-# Milestones and acceptance gates
+# Cue: five delivery phases
 
-No milestone is called complete until its behavior is demonstrated on device or emulator and its core failure paths are checked. Screens with static sample content do not pass a feature gate.
+Cue ships in **five phases total**. A phase passes only after its real behavior and failure paths work on a device or emulator. A debug build or a static screen is not acceptance evidence. The architecture remains the product contract; these phases group work without dropping features.
 
-| Gate | Scope | Acceptance evidence |
+| Phase | Deliverable | Acceptance gate |
 |---|---|---|
-| M0 | Repository, wrapper, CI, architecture, app identity | Fresh Android Studio import; debug build and launch |
-| M1 | Theme, navigation, guest/auth, local and cloud store | Cue Default + five color themes in System/Light/Dark; Google login/logout, guest migration and retained history |
-| M2 | Commitment CRUD, local scheduling | Add/edit/complete/snooze; alert fires offline; reboot recovery |
-| M3 | Voice and natural-language capture | Tap-to-talk creates/updates via shared pipeline; ambiguity review |
-| M4 | Floating Cue | Login gate, in-app activation, overlay grant, drag/snap/edge, opacity, six actions, logout removal |
-| M5 | Notification assistant | Independent access toggle; equivalent six shared actions |
-| M6 | Deduplication, provenance, and history | Same event from multiple sources appears once with all source links; reminder and global History show creation, edits, delivery, snoozes, completion, and merges, including archived reminders and unavailable source states |
-| M7 | PDF/image/DOC/table import | Extraction preview, corrections, multi-event import, duplicate merge |
-| M8 | Share/selected text/user-approved capture | No silent cross-app capture; candidate review and source link |
-| M9 | Notification intelligence | Opt-in listener, per-app filtering, revocation, suggestion policy |
-| M10 | Email integration | OAuth, minimum scope, sync cursor/retry, consent and revoke |
-| M11 | Chains, escalation, waiting for reply | Bounded alerts; completion cancels children and follow-ups |
-| M12 | Daily planner | Fixed/movable constraints, tomorrow briefing, carry forward without copies |
-| M13 | Optional wake word | Explicit opt-in, visible platform-compliant listening, graceful unsupported state |
-| M14 | Sync/security/performance and compressed archive | Multi-device conflict tests, RLS review, offline recovery, data export/deletion; old history stored in lossless versioned batches, round-trip/count/checksum verified, searchable metadata indexed, selected ranges restored, failure recovery and user isolation tested |
-| M15 | Release QA | Device matrix, accessibility, permissions, Play policy, signed release |
+| P1 — Foundation | Repository/CI, Android identity, design system, six palettes with light/dark/system, navigation, guest Room store, Google login/logout, account-scoped Supabase sync, migration | Fresh import and debug launch; visual review on phone; accessible, finished screens and states; guest data retained on sign-in, returning account restored, sign-out isolated |
+| P2 — Reminders | Create/edit/complete/archive/snooze/delete with confirmation, offline alerts, exact/inexact fallback, reboot/timezone restore, reference-inspired Reminders dashboard and selectable month calendar in Upcoming | End-to-end on-device creation and alert, calendar filtering, airplane-mode firing, no duplicate after snooze or permission change, migration preserves existing data |
+| P3 — Capture and controls | Tap-to-talk and natural-language review, import PDF/image/DOC/table, selected text/share, floating Cue including cross-app drop, notification panel, permission controls | Each entry point uses the shared pipeline, with only clear single-event input created automatically; overlay drop/snap/logout, panel outcomes, offline fallback and revocation work on device |
+| P4 — Intelligence and planning | Source links and deduplication, searchable reminder/global history with lossless compressed archive, notification suggestions, opt-in email integration, reminder chains, daily plan, opt-in screen session, optional wake word | One event across sources creates one reminder; sources and full history survive sync/compaction; AI uncertainty enters review; day plan preserves fixed times; screen consent/stop and unsupported modes degrade cleanly |
+| P5 — Finish and release | Multi-device conflict recovery, RLS/security and data export/deletion, performance, accessibility, permission/Play review, device matrix and signed release | Full regression passes, compressed-history round trip/count/checksum and owner isolation pass, accessible visual QA accepted, signed release builds |
 
-Active milestone: **M2**. M1 Google login, logout/returning account, guest migration, and theme checks were accepted by the owner on device; the latest M1 Android debug CI build passed (`952369e`). M2 implements commitment CRUD and local scheduling with offline firing and reboot recovery. M1 sign-in and guest data isolation remain regression checks.
+**Current status:** P1 functional account/theme checks and the revised Reminders layout were accepted on device; app-wide visual acceptance remains open. P2 reminders/calendar implementation is on `develop`, with [device checks](M2_DEVICE_CHECKS.md) still open. P3 has voice transcription, quick entry, selected/shared text, text/CSV/TSV/Markdown/DOCX import, Latin-script OCR for image/PDF, and a cross-app drop target on the floating bubble. Clear actionable future dates can be auto-saved with a notification result; uncertain drops need review. The floating bubble still needs sign-in and overlay access and stops on sign-out. P4 has account-synced source/change events, searchable Inbox, local lossless compaction of older uploaded events with metadata-only Inbox archive browsing, owner-scoped cloud GZIP batch sync and restore, an opt-in local daily schedule, opt-in notification deadline capture, three selectable per-reminder advance nudge schedules, and a per-session app-picker screen OCR option on Android 14+. The local English ML date model may need a download. New verified cloud batches prune their covered raw events; older batches without event IDs retain raw recovery copies; provider-backed Ask AI, full semantic deduplication, email account integration remain. P3/P4 device QA and P5 release work remain. See [capture/history checks](M3_CAPTURE_HISTORY_CHECKS.md). No extra phases are planned.
+
+P5 progress: You can export the active profile as JSON with reminders, source references and exact current/verified compressed history. Guest deletion is local; signed-in deletion now calls an owner-scoped Supabase RPC with no user ID parameter and clears the device only after the server succeeds. This destructive flow still needs two-account device QA. Reminder sync compares the last synced version and preserves a losing local draft in Inbox on a multi-device conflict; conditional cloud updates avoid silent overwrites. Full device regression, security, accessibility and signed release remain open.
+
+All user-facing screens call the core item a **reminder**. The internal canonical entity and database table remain `Commitment` / `commitments` so existing data and sync are preserved.

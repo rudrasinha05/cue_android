@@ -2,10 +2,18 @@ package com.rudrasinha.cue.ui
 
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
+import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.shape.RoundedCornerShape
 import com.rudrasinha.cue.settings.ColorTheme
 import com.rudrasinha.cue.settings.ThemePreference
 
@@ -47,6 +55,24 @@ private fun palette(theme: ColorTheme): Palette = when (theme) {
 
 fun themeSwatch(theme: ColorTheme): Color = palette(theme).primary
 
+private val cueShapes = Shapes(
+    extraSmall = RoundedCornerShape(8.dp),
+    small = RoundedCornerShape(12.dp),
+    medium = RoundedCornerShape(18.dp),
+    large = RoundedCornerShape(24.dp),
+    extraLarge = RoundedCornerShape(30.dp)
+)
+
+private val cueTypography = Typography(
+    headlineLarge = TextStyle(fontSize = 30.sp, lineHeight = 36.sp, fontWeight = FontWeight.Bold),
+    headlineMedium = TextStyle(fontSize = 26.sp, lineHeight = 32.sp, fontWeight = FontWeight.Bold),
+    titleLarge = TextStyle(fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold),
+    titleMedium = TextStyle(fontSize = 16.sp, lineHeight = 23.sp, fontWeight = FontWeight.SemiBold),
+    bodyLarge = TextStyle(fontSize = 16.sp, lineHeight = 24.sp),
+    bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 21.sp),
+    labelLarge = TextStyle(fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold)
+)
+
 @Composable
 fun CueTheme(preference: ThemePreference, colorTheme: ColorTheme, content: @Composable () -> Unit) {
     val dark = when (preference) {
@@ -61,9 +87,15 @@ fun CueTheme(preference: ThemePreference, colorTheme: ColorTheme, content: @Comp
             onPrimary = colors.darkBackground,
             primaryContainer = colors.darkContainer,
             onPrimaryContainer = colors.darkPrimary,
+            secondary = lerp(colors.darkPrimary, Color(0xFF76C5E6), 0.46f),
+            tertiary = lerp(colors.darkPrimary, Color(0xFFFFCF7A), 0.45f),
             secondaryContainer = colors.darkContainer,
+            onSecondaryContainer = colors.darkPrimary,
             background = colors.darkBackground,
-            surface = colors.darkBackground
+            surface = lerp(colors.darkBackground, colors.darkContainer, 0.30f),
+            onSurface = Color(0xFFF8F6FF),
+            onSurfaceVariant = Color(0xFFBFBDCA),
+            outlineVariant = lerp(colors.darkBackground, colors.darkPrimary, 0.32f)
         )
     } else {
         lightColorScheme(
@@ -71,10 +103,16 @@ fun CueTheme(preference: ThemePreference, colorTheme: ColorTheme, content: @Comp
             onPrimary = Color.White,
             primaryContainer = colors.lightContainer,
             onPrimaryContainer = colors.primary,
+            secondary = lerp(colors.primary, Color(0xFF117E9F), 0.40f),
+            tertiary = lerp(colors.primary, Color(0xFFA36A13), 0.48f),
             secondaryContainer = colors.lightContainer,
+            onSecondaryContainer = colors.primary,
             background = colors.lightBackground,
-            surface = colors.lightBackground
+            surface = Color.White,
+            onSurface = Color(0xFF23202B),
+            onSurfaceVariant = Color(0xFF5E5B69),
+            outlineVariant = lerp(colors.lightBackground, colors.primary, 0.22f)
         )
     }
-    MaterialTheme(colorScheme = scheme, content = content)
+    MaterialTheme(colorScheme = scheme, typography = cueTypography, shapes = cueShapes, content = content)
 }
