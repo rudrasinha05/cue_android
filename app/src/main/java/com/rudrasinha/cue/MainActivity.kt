@@ -835,9 +835,9 @@ private fun YouScreen(
                 Spacer(Modifier.height(14.dp))
                 androidx.compose.material3.OutlinedButton(onClick = onExportData,
                     enabled = !accountBusy) { Text("Export my Cue data") }
-                if (!signedIn) androidx.compose.material3.TextButton(
+                androidx.compose.material3.TextButton(
                     onClick = { deleteDataPrompt = true }, enabled = !accountBusy) {
-                    Text("Delete reminders on this device")
+                    Text(if (signedIn) "Delete my Cue data everywhere" else "Delete reminders on this device")
                 }
             }
         }
@@ -1074,9 +1074,10 @@ private fun YouScreen(
     }
     if (deleteDataPrompt) androidx.compose.material3.AlertDialog(
         onDismissRequest = { deleteDataPrompt = false },
-        title = { Text("Delete guest data?") },
-        text = { Text("This deletes guest reminders and history on this device. " +
-            "This cannot be undone.") },
+        title = { Text(if (signedIn) "Delete all synced Cue data?" else "Delete guest data?") },
+        text = { Text(if (signedIn)
+            "This permanently removes your synced reminders, sources and history from Cue and this device. Export first if you need a copy. Your Google account remains active."
+            else "This deletes guest reminders and history on this device. This cannot be undone.") },
         confirmButton = { androidx.compose.material3.TextButton(onClick = {
             deleteDataPrompt = false; onDeleteData()
         }) { Text("Delete all") } },

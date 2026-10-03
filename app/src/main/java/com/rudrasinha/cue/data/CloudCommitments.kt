@@ -5,6 +5,7 @@ import android.util.Base64
 import com.rudrasinha.cue.reminders.ReminderScheduler
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.from
+import io.github.jan.supabase.postgrest.postgrest
 import java.time.Instant
 import java.util.UUID
 import org.json.JSONObject
@@ -67,6 +68,11 @@ private data class CloudHistoryBatch(
 
 class CloudCommitments(private val database: CueDatabase, private val client: SupabaseClient,
     private val scheduler: ReminderScheduler) {
+    /** The server RPC derives its owner from the authenticated JWT, never from a client parameter. */
+    suspend fun deleteAccountData() {
+        client.postgrest.rpc("delete_my_cue_data")
+    }
+
     // The same UUID is used locally and remotely. Repeated sign-in safely retries the upload.
     suspend fun restoreAndClaim(userId: String) {
         val dao = database.commitments()

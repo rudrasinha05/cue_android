@@ -51,7 +51,7 @@ class AccountData(private val database: CueDatabase, private val scheduler: Remi
     }
 
     suspend fun delete(ownerId: String) {
-        require(ownerId == "guest") { "Account data deletion needs a secure cloud endpoint." }
+        if (ownerId != "guest") cloud.deleteAccountData()
         scheduler.cancelOwner(ownerId)
         database.withTransaction {
             database.history().deleteBatchesForOwner(ownerId)

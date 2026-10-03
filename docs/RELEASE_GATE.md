@@ -13,7 +13,7 @@
 
 - Configure the app's upload key outside Git and build a **signed** release AAB. Keep the same key for updates. Increment `versionCode` for each Play upload.
 - Complete Play Console declarations for exact alarms, full-screen alarm intents, overlay, foreground services, notification listener and per-session screen projection; verify the final permission copy and store listing/privacy policy.
-- Provider-backed Ask AI and opt-in email access require separate service configuration and explicit data-sharing scope. Signed-in cloud deletion requires a reviewed owner-scoped backend path. Do not claim these features are live while blocked.
+- Provider-backed Ask AI and opt-in email access require separate service configuration and explicit data-sharing scope. Signed-in data deletion uses `delete_my_cue_data()` and needs a two-account device check before release: export first, cancel once, then delete account A and confirm account B remains intact; retry after an offline failure.
 - Only after device acceptance and a signed bundle, merge the accepted `develop` commit to `main` and start Play internal testing.
 
 ### Build a signed candidate on the owner's computer
