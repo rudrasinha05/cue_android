@@ -227,14 +227,21 @@ fun CommitmentListScreen(
                     val categories = listOf(ReminderView.TODAY, ReminderView.SCHEDULED,
                         ReminderView.PAST, ReminderView.NO_ALERT,
                         ReminderView.COMPLETED, ReminderView.ALL)
-                    categories.chunked(2).forEach { pair ->
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            pair.forEach { view ->
-                                CategoryCard(view, matching(view).size, selectedView == view,
-                                    Modifier.weight(1f)) { selectedView = view }
+                    BoxWithConstraints(Modifier.fillMaxWidth()) {
+                        val columns = if (maxWidth >= 340.dp) 3 else 2
+                        Column {
+                            categories.chunked(columns).forEach { row ->
+                                Row(Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    row.forEach { view ->
+                                        CategoryCard(view, matching(view).size,
+                                            selectedView == view, columns == 3,
+                                            Modifier.weight(1f)) { selectedView = view }
+                                    }
+                                }
+                                Spacer(Modifier.height(10.dp))
                             }
                         }
-                        Spacer(Modifier.height(12.dp))
                     }
                     TextButton(onClick = onDayPlan,
                         modifier = Modifier.align(Alignment.End)) {
@@ -341,21 +348,28 @@ fun CommitmentListScreen(
 }
 
 @Composable
-private fun CategoryCard(view: ReminderView, count: Int, selected: Boolean,
+private fun CategoryCard(view: ReminderView, count: Int, selected: Boolean, compact: Boolean,
     modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Surface(onClick = onClick, modifier = modifier.height(126.dp),
-        shape = RoundedCornerShape(26.dp), color = cardColor,
+    Surface(onClick = onClick, modifier = modifier.height(if (compact) 116.dp else 126.dp),
+        shape = RoundedCornerShape(24.dp), color = cardColor,
         border = BorderStroke(1.dp, if (selected) violet else MaterialTheme.colorScheme.outlineVariant),
         shadowElevation = if (selected) 4.dp else 0.dp) {
-        Column(Modifier.fillMaxSize().padding(18.dp),
+        Column(Modifier.fillMaxSize().padding(if (compact) 12.dp else 18.dp),
             verticalArrangement = Arrangement.SpaceBetween) {
             Icon(view.icon, contentDescription = null, tint = view.tint,
-                modifier = Modifier.size(28.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(view.label, color = ivory, style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.weight(1f), maxLines = 1)
+                modifier = Modifier.size(if (compact) 25.dp else 28.dp))
+            if (compact) {
+                Text(view.label, color = ivory, style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(count.toString(), color = if (selected) violet else muted,
-                    fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
+                    fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelMedium)
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(view.label, color = ivory, style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f), maxLines = 1)
+                    Text(count.toString(), color = if (selected) violet else muted,
+                        fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
+                }
             }
         }
     }
