@@ -25,4 +25,13 @@ class ReminderMatchTest {
         assertNull(ReminderMatch.existing(listOf(existing), "Submit electricity bill"))
         assertNull(ReminderMatch.existing(listOf(existing), "Pay electricity bill and rent"))
     }
+
+    @Test fun safeSynonymsStillPreserveDifferentObjects() {
+        val existing = reminder("Renew subscription")
+        assertEquals(existing, ReminderMatch.existing(listOf(existing), "My subscription renewal"))
+        assertNull(ReminderMatch.existing(listOf(existing), "Renew insurance"))
+        assertNull(ReminderMatch.existing(listOf(existing), "Cancel subscription"))
+        val bill = reminder("Pay electricity bills")
+        assertEquals(bill, ReminderMatch.existing(listOf(bill), "Electricity bill payment"))
+    }
 }
