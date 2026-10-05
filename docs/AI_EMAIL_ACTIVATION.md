@@ -1,6 +1,6 @@
 # Cue AI and email activation contract
 
-These integrations remain off until the owner approves the exact data flow and configures credentials. The Android app currently uses local extraction and explicit Share → Cue for email text; neither requires a mailbox permission or sends reminder text to Gemini.
+Cloud analysis has an explicit account-scoped opt-in and a deployed authenticated function. Gemini responses require the owner to configure its server-side key. Email access remains off; users can explicitly Share → Cue from an email app without mailbox permissions.
 
 ## Optional cloud deadline analysis
 
