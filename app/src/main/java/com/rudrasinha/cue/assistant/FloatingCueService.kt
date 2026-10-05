@@ -495,7 +495,7 @@ class FloatingCueService : Service() {
             } catch (e: Exception) {
                 intake.failure(e.message ?: "Could not analyze this item.")
             } finally {
-                if (onFinished != null) handler.post(onFinished)
+                if (onFinished != null) handler.post { onFinished() }
             }
         }
     }
