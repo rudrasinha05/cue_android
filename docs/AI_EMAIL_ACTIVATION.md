@@ -2,13 +2,14 @@
 
 These integrations remain off until the owner approves the exact data flow and configures credentials. The Android app currently uses local extraction and explicit Share → Cue for email text; neither requires a mailbox permission or sends reminder text to Gemini.
 
-## Ask AI
+## Optional cloud deadline analysis (draft, not deployed)
 
-- Destination: Google Gemini API through a Cue Supabase Edge Function. Keep the Gemini API key in server-side secrets, never in the APK or Git.
-- Proposed per-request payload: the question the user types, and only the reminder titles and due times the user explicitly selects for that question. No full Inbox history, raw emails, screen frames, document bodies, account email address, or background capture data.
-- Show the destination and selected fields before the first request, with a Cancel action; an empty reminder selection sends only the typed question. Do not send a request if consent is declined.
-- Return a draft answer or reminder suggestion for review. The provider must never create, change or delete a reminder directly. Rate limit and bound the prompt/response sizes; errors fall back to local manual entry.
-- Activation requires a server-side `GEMINI_API_KEY`, a working authenticated Edge Function, data-sharing approval for this payload, and a device test of consent, refusal, offline and error states.
+- Proposed destination: Google Gemini API through Cue's Supabase Edge Function `cue-analyze`. The draft source is in `supabase/functions/cue-analyze/index.ts`; it is **not deployed or called by Android**.
+- Proposed per-request payload: **one possible reminder line, at most 300 characters**, the device timezone, and server time. This could be a short excerpt of on-screen OCR, selected/shared text, voice transcription, or imported content. No complete frame, image, full document, Inbox history, account email address, or mailbox content is sent. Even one line can contain private information.
+- The signed-in user must explicitly opt in under You before any cloud request. Default stays local-only. The UI must name Supabase and Google Gemini, show the exact scope, provide a way to turn it off, and avoid cloud requests when off or signed out.
+- The server verifies the user token against Supabase Auth, bounds input/output, and returns only a proposed future due time. The Android confidence gate must validate it before creating a reminder. Neither the function nor Gemini writes reminders or their history.
+- A `GEMINI_API_KEY` belongs only in the function's server-side secret store. No client APK, Git commit or chat message should contain it. A per-instance request cap in the draft is **not** a global abuse limit; add a durable per-owner rate limit and verify authentication, refusal, timeout, malformed output and offline fallbacks before activation.
+- Automatic approval review rejected deployment because sending private reminder text to Gemini and using custom token verification need explicit approval for this destination and data scope. Do not deploy or wire the Android client before that approval. There are currently no Edge Functions in the Cue project.
 
 ## Email
 
