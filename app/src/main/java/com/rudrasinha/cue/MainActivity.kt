@@ -1162,6 +1162,18 @@ private fun YouScreen(
         }
         Spacer(Modifier.height(18.dp))
         Button(onClick = { onSettingsOpen(true) }) { Text("Open settings") }
+        Spacer(Modifier.height(24.dp))
+        Text("Import reminders", style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(8.dp))
+        Text("Pick Google Calendar events, or paste a booking or interview message from Gmail.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(12.dp))
+        Button(onClick = onImportGoogleCalendar, enabled = !calendarBusy) {
+            Text(if (calendarBusy) "Reading calendar…" else "Import Google Calendar")
+        }
+        Spacer(Modifier.height(8.dp))
+        TextButton(onClick = onImportMail) { Text("Paste a Gmail message") }
         Spacer(Modifier.height(20.dp))
         }
         if (settingsOpen) {
@@ -1362,18 +1374,6 @@ private fun YouScreen(
             dismissButton = { androidx.compose.material3.TextButton(onClick = {
                 cloudConsentPrompt = false
             }) { Text("Cancel") } })
-        Spacer(Modifier.height(32.dp))
-        Text("Google apps", style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.height(8.dp))
-        Text("Review upcoming Google Calendar bookings and interviews. For a Gmail message, copy its relevant text into Cue, or enable notification reminders below.",
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(12.dp))
-        Button(onClick = onImportGoogleCalendar, enabled = !calendarBusy) {
-            Text(if (calendarBusy) "Reading calendar…" else "Import from Google Calendar")
-        }
-        Spacer(Modifier.height(8.dp))
-        TextButton(onClick = onImportMail) { Text("Paste a Gmail booking or interview") }
         Spacer(Modifier.height(32.dp))
         Text("Notification reminders", style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.SemiBold)

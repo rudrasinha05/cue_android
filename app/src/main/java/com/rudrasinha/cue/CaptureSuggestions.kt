@@ -49,7 +49,8 @@ internal data class ConfidentReminder(val title: String, val dueAtMillis: Long)
 internal fun actionableReminder(line: String): Boolean = Regex(
     "\\b(call|meet|meeting|appointment|pay|submit|send|email|book|buy|pick up|" +
         "collect|renew|visit|take|bring|attend|register|deadline|due|interview|" +
-        "exam|flight|train|doctor|dentist|bill|class|event|webinar|follow up|" +
+        "exam|flight|train|ticket|booking|reservation|departure|boarding|" +
+        "doctor|dentist|bill|class|event|webinar|follow up|" +
         "yaad dilana|fees|dawai|bhejna|jama karna)\\b",
     RegexOption.IGNORE_CASE).containsMatchIn(line)
 

@@ -33,8 +33,16 @@ class CaptureIntake(private val context: Context) {
     suspend fun accept(text: String, type: String, titleHint: String? = null, uri: String? = null): Boolean {
         val content = text.trim().take(4000)
         if (content.isEmpty()) { acknowledge("Nothing readable found", "Try sharing text or a clearer image."); return false }
-        val candidate = LocalReminderInterpreter.find(content) ?: runCatching {
-            CloudReminderInterpreter(context).find(content)
+        val lines = content.lineSequence().map(String::trim).filter(String::isNotBlank).take(21).toList()
+        val mailCandidate = if (type == "mail" && lines.size in 2..20) {
+            val actions = lines.filter(::actionableReminder)
+            val dates = lines.filter { explicitDateTimeSpan(it) || suggestedDue(it) != null }
+            if (actions.size == 1 && dates.size == 1 && actions.single() != dates.single())
+                "${actions.single()} ${dates.single()}" else null
+        } else null
+        val analysisText = mailCandidate ?: content
+        val candidate = LocalReminderInterpreter.find(analysisText) ?: runCatching {
+            CloudReminderInterpreter(context).find(analysisText)
         }.getOrNull()
         val title = candidate?.title ?: content.lineSequence()
             .firstOrNull { it.isNotBlank() }?.trim()?.take(100) ?: "New reminder"

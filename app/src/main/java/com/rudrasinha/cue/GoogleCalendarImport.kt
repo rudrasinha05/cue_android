@@ -27,7 +27,7 @@ internal object GoogleCalendarImport {
             CalendarContract.Instances.BEGIN, CalendarContract.Instances.TITLE,
             CalendarContract.Instances.EVENT_LOCATION,
             CalendarContract.Instances.CALENDAR_DISPLAY_NAME,
-            CalendarContract.Instances.ACCOUNT_TYPE)
+            CalendarContract.Calendars.ACCOUNT_TYPE)
         val events = mutableListOf<Event>()
         CalendarContract.Instances.query(context.contentResolver, columns, now, until)?.use { cursor ->
             while (cursor.moveToNext() && events.size < 100) {
