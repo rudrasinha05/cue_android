@@ -80,7 +80,7 @@ class ScreenInsightService : Service() {
         if (consent == null || result != android.app.Activity.RESULT_OK) {
             stopSelf(); return START_NOT_STICKY
         }
-        oneShot = intent.getBooleanExtra(EXTRA_ONCE, false)
+        oneShot = intent?.getBooleanExtra(EXTRA_ONCE, false) == true
         startedAt = SystemClock.elapsedRealtime()
         try {
             val notification = notice()

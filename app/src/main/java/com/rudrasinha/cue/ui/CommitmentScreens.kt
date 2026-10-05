@@ -508,9 +508,10 @@ private fun ReminderCard(item: CommitmentEntity, now: Long, completed: Boolean,
                         style = MaterialTheme.typography.labelSmall, maxLines = 1,
                         modifier = Modifier.clickable {
                             file.originalUri?.let { uri -> runCatching {
-                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(uri)).apply {
+                                context.startActivity(Intent(Intent.ACTION_VIEW).apply {
                                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                    type = context.contentResolver.getType(Uri.parse(uri)) ?: "*/*"
+                                    setDataAndType(Uri.parse(uri),
+                                        context.contentResolver.getType(Uri.parse(uri)) ?: "*/*")
                                 })
                             } }
                         })
