@@ -28,6 +28,8 @@ import com.rudrasinha.cue.importedText
 import com.rudrasinha.cue.reminders.ReminderScheduler
 import com.rudrasinha.cue.settings.ThemeStore
 import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.sin
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -63,8 +65,8 @@ class FloatingCueService : Service() {
     private var surface = Color.rgb(37, 34, 53)
     private var onSurface = Color.WHITE
     private val size get() = dp(sizeDp)
-    private val menuWidth get() = dp(260)
-    private val menuHeight get() = dp(if (quickEntry) 210 else 430)
+    private val menuWidth get() = dp(if (quickEntry) 260 else 300)
+    private val menuHeight get() = dp(if (quickEntry) 210 else 300)
     private val hidden get() = dp(14)
     private val screenWidth get() = resources.displayMetrics.widthPixels
     private val screenHeight get() = resources.displayMetrics.heightPixels
@@ -283,7 +285,8 @@ class FloatingCueService : Service() {
                 else -> true
             }
         }
-        val bubbleX = if (expanded && rightEdge) width - size else 0
+        val bubbleX = if (expanded && !quickEntry) (width - size) / 2
+            else if (expanded && rightEdge) width - size else 0
         if (!(expanded && quickEntry)) frame.addView(bubble, FrameLayout.LayoutParams(size, size).apply {
             leftMargin = bubbleX
             topMargin = if (expanded) (height - size) / 2 else 0
@@ -340,19 +343,21 @@ class FloatingCueService : Service() {
     }
 
     private fun addActions(frame: FrameLayout) {
-        val offsets = intArrayOf(56, 78, 84, 84, 78, 56)
-        val tops = intArrayOf(12, 73, 134, 195, 256, 317)
+        val diameter = dp(48)
+        val radius = dp(101)
+        val cx = menuWidth / 2
+        val cy = menuHeight / 2
         CueAction.entries.forEachIndexed { index, action ->
             val chip = TextView(this).apply {
-                text = "${action.symbol}   ${action.label}"
-                textSize = 14f
+                text = action.symbol
+                contentDescription = action.label
+                textSize = 25f
                 typeface = android.graphics.Typeface.DEFAULT_BOLD
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(15), 0, dp(8), 0)
+                gravity = Gravity.CENTER
                 setTextColor(onSurface)
                 background = GradientDrawable().apply {
                     setColor(surface)
-                    cornerRadius = dp(18).toFloat()
+                    cornerRadius = diameter / 2f
                     setStroke(dp(1), accent)
                 }
                 elevation = dp(8).toFloat()
@@ -368,10 +373,10 @@ class FloatingCueService : Service() {
                     startActivity(AssistantControls.shortcutIntent(this@FloatingCueService, action.key))
                 }
             }
-            val offset = dp(offsets[index])
-            frame.addView(chip, FrameLayout.LayoutParams(dp(175), dp(50)).apply {
-                leftMargin = if (rightEdge) menuWidth - dp(175) - offset else offset
-                topMargin = dp(tops[index])
+            val angle = Math.toRadians(-90.0 + index * 360.0 / CueAction.entries.size)
+            frame.addView(chip, FrameLayout.LayoutParams(diameter, diameter).apply {
+                leftMargin = cx + (radius * cos(angle)).toInt() - diameter / 2
+                topMargin = cy + (radius * sin(angle)).toInt() - diameter / 2
             })
         }
     }

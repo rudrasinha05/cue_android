@@ -10,6 +10,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Build
 import android.media.projection.MediaProjectionManager
+import android.media.projection.MediaProjectionConfig
 import android.provider.Settings
 import android.speech.RecognizerIntent
 import androidx.activity.ComponentActivity
@@ -25,6 +26,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -59,6 +61,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTimePickerState
@@ -302,6 +305,29 @@ private fun CueApp(
     var timetableDraft by remember { mutableStateOf<CaptureDraft?>(null) }
     var facultyCodes by remember { mutableStateOf("") }
     var timetableSaving by remember { mutableStateOf(false) }
+    var calendarEvents by remember { mutableStateOf<List<GoogleCalendarImport.Event>?>(null) }
+    var chosenCalendarKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var calendarBusy by remember { mutableStateOf(false) }
+    var mailImportOpen by remember { mutableStateOf(false) }
+    var mailImportText by remember { mutableStateOf("") }
+    fun readGoogleCalendar() {
+        scope.launch {
+            calendarBusy = true
+            try {
+                calendarEvents = withContext(Dispatchers.IO) {
+                    GoogleCalendarImport.upcoming(activity)
+                }
+                chosenCalendarKeys = emptySet()
+            } catch (e: Exception) {
+                controlMessage = "Could not read Google Calendar: ${e.message ?: "try again"}"
+            } finally { calendarBusy = false }
+        }
+    }
+    val calendarPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) readGoogleCalendar()
+        else controlMessage = "Calendar permission is needed to review Google events."
+    }
     val documentLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) scope.launch {
             try {
@@ -458,7 +484,7 @@ private fun CueApp(
                 if (Build.VERSION.SDK_INT >= 34) {
                     scanOncePending = true
                     projectionLauncher.launch(activity.getSystemService(MediaProjectionManager::class.java)
-                        .createScreenCaptureIntent())
+                        .createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay()))
                 } else controlMessage = "Scan this screen needs Android 14 or newer."
             }
             CueAction.DAY -> { selected = Tab.TODAY; todayFocusToken++; dayPlanOpen = true }
@@ -830,6 +856,13 @@ private fun CueApp(
                     },
                     cloudAnalysisOwner == userId && userId != null,
                     { enable -> scope.launch { themeStore.setCloudAnalysisOwner(if (enable) userId else null) } },
+                    calendarBusy,
+                    {
+                        if (activity.checkSelfPermission(Manifest.permission.READ_CALENDAR) ==
+                            PackageManager.PERMISSION_GRANTED) readGoogleCalendar()
+                        else calendarPermission.launch(Manifest.permission.READ_CALENDAR)
+                    },
+                    { mailImportText = ""; mailImportOpen = true },
                     padding
                 )
             }
@@ -839,6 +872,79 @@ private fun CueApp(
             dispatchShortcut(action)
         }
         if (dayPlanOpen) DailyPlanSheet(items, wakeMinute, bedMinute) { dayPlanOpen = false }
+        if (mailImportOpen) AlertDialog(onDismissRequest = { mailImportOpen = false },
+            title = { Text("Import from an email") },
+            text = { Column {
+                Text("Copy the relevant booking or interview message from Gmail and paste it here. Cue will add a reminder only when it finds a clear future time.")
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(mailImportText, onValueChange = { mailImportText = it.take(4000) },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp),
+                    label = { Text("Paste message") })
+            } },
+            confirmButton = { TextButton(enabled = mailImportText.isNotBlank(), onClick = {
+                val selectedMail = mailImportText
+                mailImportOpen = false
+                scope.launch {
+                    try { CaptureIntake(activity.applicationContext).accept(selectedMail, "mail", "Pasted email") }
+                    catch (e: Exception) { reminderMessage = e.message ?: "Could not analyze this message." }
+                }
+            }) { Text("Analyze message") } },
+            dismissButton = { TextButton(onClick = { mailImportOpen = false }) { Text("Cancel") } })
+        calendarEvents?.let { events ->
+            AlertDialog(onDismissRequest = { if (!calendarBusy) calendarEvents = null },
+                title = { Text("Import Google events") },
+                text = { Column {
+                    Text("Choose ticket bookings, interviews or other events. Cue will alert before their start. Only selected events are saved.")
+                    Spacer(Modifier.height(12.dp))
+                    if (events.isEmpty()) Text("No upcoming events found in a Google calendar on this device.")
+                    Column(Modifier.heightIn(max = 390.dp).verticalScroll(rememberScrollState())) {
+                        events.forEach { event ->
+                            val label = java.time.Instant.ofEpochMilli(event.startsAt)
+                                .atZone(java.time.ZoneId.systemDefault())
+                                .format(java.time.format.DateTimeFormatter.ofPattern("d MMM · h:mm a"))
+                            Row(Modifier.fillMaxWidth().clickable {
+                                chosenCalendarKeys = if (event.key in chosenCalendarKeys)
+                                    chosenCalendarKeys - event.key else chosenCalendarKeys + event.key
+                            }.padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(checked = event.key in chosenCalendarKeys,
+                                    onCheckedChange = { checked ->
+                                        chosenCalendarKeys = if (checked) chosenCalendarKeys + event.key
+                                            else chosenCalendarKeys - event.key
+                                    })
+                                Column {
+                                    Text(event.title, fontWeight = FontWeight.SemiBold)
+                                    Text("$label · ${event.calendar}",
+                                        style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                        }
+                    }
+                } },
+                confirmButton = { TextButton(enabled = chosenCalendarKeys.isNotEmpty() && !calendarBusy,
+                    onClick = { scope.launch {
+                        calendarBusy = true
+                        try {
+                            var added = 0
+                            events.filter { it.key in chosenCalendarKeys }.forEach { event ->
+                                if (database.history().sourceByOrigin(ownerId, "google_calendar", event.key) == null) {
+                                    actions.save(ownerId, null, event.title,
+                                        listOfNotNull(event.location,
+                                            "Event: " + java.time.Instant.ofEpochMilli(event.startsAt)
+                                                .atZone(java.time.ZoneId.systemDefault())).joinToString(" · "),
+                                        event.alertAt,
+                                        CaptureOrigin("google_calendar", event.calendar, event.title,
+                                            null, event.key), reminderTone)
+                                    added++
+                                }
+                            }
+                            reminderMessage = "$added Google Calendar reminders added."
+                            calendarEvents = null
+                        } catch (e: Exception) {
+                            controlMessage = e.message ?: "Calendar import failed."
+                        } finally { calendarBusy = false }
+                    } }) { Text(if (calendarBusy) "Importing…" else "Add selected") } },
+                dismissButton = { TextButton(onClick = { calendarEvents = null }) { Text("Cancel") } })
+        }
         timetableDraft?.let { draft ->
             val matches = ProfessorTimetable.matches(draft.text, facultyCodes)
             AlertDialog(onDismissRequest = { if (!timetableSaving) timetableDraft = null },
@@ -948,6 +1054,9 @@ private fun YouScreen(
     onNotificationIntelligence: (Boolean) -> Unit,
     cloudAnalysisEnabled: Boolean,
     onCloudAnalysis: (Boolean) -> Unit,
+    calendarBusy: Boolean,
+    onImportGoogleCalendar: () -> Unit,
+    onImportMail: () -> Unit,
     padding: PaddingValues
 ) {
     var deleteDataPrompt by remember { mutableStateOf(false) }
@@ -1253,6 +1362,18 @@ private fun YouScreen(
             dismissButton = { androidx.compose.material3.TextButton(onClick = {
                 cloudConsentPrompt = false
             }) { Text("Cancel") } })
+        Spacer(Modifier.height(32.dp))
+        Text("Google apps", style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(8.dp))
+        Text("Review upcoming Google Calendar bookings and interviews. For a Gmail message, copy its relevant text into Cue, or enable notification reminders below.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(12.dp))
+        Button(onClick = onImportGoogleCalendar, enabled = !calendarBusy) {
+            Text(if (calendarBusy) "Reading calendar…" else "Import from Google Calendar")
+        }
+        Spacer(Modifier.height(8.dp))
+        TextButton(onClick = onImportMail) { Text("Paste a Gmail booking or interview") }
         Spacer(Modifier.height(32.dp))
         Text("Notification reminders", style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.SemiBold)
