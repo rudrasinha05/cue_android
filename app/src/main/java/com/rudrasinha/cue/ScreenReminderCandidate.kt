@@ -6,7 +6,8 @@ internal object ScreenReminderCandidate {
         val candidates = ocrText.lineSequence().take(120).map { line ->
             line.trim().replace(Regex("\\s+"), " ")
         }.filter { line ->
-            line.length in 10..200 && actionableReminder(line) && explicitDateTimeSpan(line)
+            line.length in 10..200 && actionableReminder(line) &&
+                (explicitDateTimeSpan(line) || suggestedDue(line) != null)
         }.distinct().take(2).toList()
         return candidates.singleOrNull()
     }

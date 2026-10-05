@@ -15,4 +15,10 @@ class ScreenReminderCandidateTest {
         assertNull(ScreenReminderCandidate.select("Home\n10:30\nMeeting\nTomorrow"))
         assertNull(ScreenReminderCandidate.select("Submit report soon"))
     }
+
+    @Test fun findsExplicitHinglishDeadlineButNotAmbiguousTime() {
+        assertEquals("Kal subah 9:30 baje meeting yaad dilana",
+            ScreenReminderCandidate.select("Messages\nKal subah 9:30 baje meeting yaad dilana\nBattery 80%"))
+        assertNull(ScreenReminderCandidate.select("Kal 5 baje meeting"))
+    }
 }
