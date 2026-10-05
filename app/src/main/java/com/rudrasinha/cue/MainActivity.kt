@@ -522,7 +522,9 @@ private fun CueApp(
                     },
                     reminderTone,
                     { id, title, details, due, origin, tone ->
-                        perform("Reminder saved.") { actions.save(ownerId, id, title, details, due, origin, tone) }
+                        val synced = actions.save(ownerId, id, title, details, due, origin, tone)
+                        reminderMessage = if (synced) "Reminder saved."
+                            else "Saved on this device; account sync is pending."
                         if (due != null && Build.VERSION.SDK_INT >= 33 &&
                             activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)

@@ -41,6 +41,7 @@ import java.time.LocalTime
 import java.time.YearMonth
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.launch
 
 private val canvasTop: Color @Composable get() = MaterialTheme.colorScheme.background
 private val cardColor: Color @Composable get() = MaterialTheme.colorScheme.surface
@@ -78,7 +79,7 @@ fun CommitmentListScreen(
     active: List<CommitmentEntity>, completed: List<CommitmentEntity>, upcoming: Boolean,
     message: String?, exactAvailable: Boolean, notificationsAllowed: Boolean,
     onExactAccess: () -> Unit, onNotificationAccess: () -> Unit,
-    defaultTone: String, onSave: (String?, String, String?, Long?, CaptureOrigin, String) -> Unit,
+    defaultTone: String, onSave: suspend (String?, String, String?, Long?, CaptureOrigin, String) -> Unit,
     onComplete: (String) -> Unit, onSnooze: (String) -> Unit,
     onFollowUp: (String, Long) -> Unit, onChain: (String, List<Long>?) -> Unit,
     onArchive: (String) -> Unit,
@@ -360,6 +361,13 @@ fun CommitmentListScreen(
         onDismiss = { editorOpen = false; if (externalDraft != null) onCaptureDismiss() }) { title, details, due, tone ->
         onSave(editing?.id, title, details, due, draftOrigin, tone)
         editorOpen = false
+        query = ""
+        searchOpen = false
+        if (upcoming) {
+            selectedDate = due?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate() }
+                ?: selectedDate
+            visibleMonth = YearMonth.from(selectedDate)
+        } else selectedView = ReminderView.ALL
         if (externalDraft != null) onCaptureDismiss()
     } }
 }
@@ -597,7 +605,7 @@ private fun CalendarGrid(month: YearMonth, selectedDate: LocalDate,
 private fun ReminderEditor(item: CommitmentEntity?, suggestedTitle: String, suggestedDetails: String,
     suggestedDue: Long?,
     draftId: String, initialDate: LocalDate, defaultTone: String,
-    onDismiss: () -> Unit, onSave: (String, String?, Long?, String) -> Unit) {
+    onDismiss: () -> Unit, onSave: suspend (String, String?, Long?, String) -> Unit) {
     val initialDue = (item?.dueAtMillis ?: suggestedDue)?.let {
         Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault())
     }
@@ -613,6 +621,9 @@ private fun ReminderEditor(item: CommitmentEntity?, suggestedTitle: String, sugg
     var showCalendar by remember { mutableStateOf(false) }
     var showTime by remember { mutableStateOf(false) }
     var timeMode by remember { mutableStateOf("input") }
+    var saving by remember { mutableStateOf(false) }
+    var saveError by remember { mutableStateOf<String?>(null) }
+    val saveScope = rememberCoroutineScope()
     val keyboard = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
     val initialTime = initialDue?.toLocalTime() ?: suggestedStart.toLocalTime()
@@ -623,7 +634,7 @@ private fun ReminderEditor(item: CommitmentEntity?, suggestedTitle: String, sugg
     val valid = title.isNotBlank() && (due == null || due > System.currentTimeMillis())
 
     run {
-        ModalBottomSheet(onDismissRequest = onDismiss,
+        ModalBottomSheet(onDismissRequest = { if (!saving) onDismiss() },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
             containerColor = cardColor, contentColor = ivory,
             dragHandle = { Surface(shape = CircleShape, color = muted,
@@ -781,9 +792,18 @@ private fun ReminderEditor(item: CommitmentEntity?, suggestedTitle: String, sugg
                     }
                 }
                 Spacer(Modifier.height(24.dp))
-                Button(onClick = { onSave(title.trim(), details.trim().ifBlank { null }, due, chosenTone) },
-                    enabled = valid, modifier = Modifier.fillMaxWidth()) {
-                    Text(if (item == null) "Save reminder" else "Save changes")
+                saveError?.let { Text(it, color = coral, style = MaterialTheme.typography.bodySmall) }
+                Button(onClick = {
+                    if (!saving) saveScope.launch {
+                        saving = true
+                        saveError = null
+                        try { onSave(title.trim(), details.trim().ifBlank { null }, due, chosenTone) }
+                        catch (e: Exception) {
+                            saveError = e.message ?: "Could not save. Please try again."
+                        } finally { saving = false }
+                    }
+                }, enabled = valid && !saving, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (saving) "Saving…" else if (item == null) "Save reminder" else "Save changes")
                 }
                 Spacer(Modifier.height(12.dp))
             }
