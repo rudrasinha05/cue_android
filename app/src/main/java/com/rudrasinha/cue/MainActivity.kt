@@ -88,6 +88,8 @@ import com.rudrasinha.cue.data.CloudCommitments
 import com.rudrasinha.cue.data.CaptureOrigin
 import com.rudrasinha.cue.data.HistoryArchive
 import com.rudrasinha.cue.data.AccountData
+import com.rudrasinha.cue.data.CueProfile
+import com.rudrasinha.cue.data.CueProfileStore
 import com.rudrasinha.cue.auth.CueAuth
 import com.rudrasinha.cue.auth.signInErrorMessage
 import com.rudrasinha.cue.settings.ThemePreference
@@ -226,11 +228,25 @@ private fun CueApp(
     val screenRunning by ScreenInsightService.running.collectAsState()
     val dailyPlanEnabled by themeStore.dailyPlanEnabled.collectAsState(initial = false)
     val notificationIntelligence by themeStore.notificationIntelligence.collectAsState(initial = false)
+    val cloudAnalysisOwner by themeStore.cloudAnalysisOwner.collectAsState(initial = null)
     val wakeMinute by themeStore.wakeMinute.collectAsState(initial = 420)
     val bedMinute by themeStore.bedMinute.collectAsState(initial = 1320)
     val session by auth.client.auth.sessionStatus.collectAsState(initial = SessionStatus.Initializing)
     val userId = (session as? SessionStatus.Authenticated)?.session?.user?.id
     val ownerId = userId ?: "guest"
+    val accessToken = (session as? SessionStatus.Authenticated)?.session?.accessToken
+    var profile by remember(userId) { mutableStateOf<CueProfile?>(null) }
+    var profileBusy by remember(userId) { mutableStateOf(false) }
+    var profileError by remember(userId) { mutableStateOf<String?>(null) }
+    val profileStore = remember { CueProfileStore() }
+    LaunchedEffect(userId, accessToken) {
+        if (userId != null && accessToken != null) {
+            profileBusy = true
+            try { profile = profileStore.load(accessToken); profileError = null }
+            catch (e: Exception) { profileError = "Profile could not load. Check your connection." }
+            finally { profileBusy = false }
+        }
+    }
     val items by remember(ownerId) { commitments.observeActive(ownerId) }.collectAsState(initial = emptyList())
     val completed by remember(ownerId) { commitments.observeCompleted(ownerId) }.collectAsState(initial = emptyList())
     val history by remember(ownerId) { database.history().observeEvents(ownerId) }.collectAsState(initial = emptyList())
@@ -590,6 +606,18 @@ private fun CueApp(
                     settingsOpen, { settingsOpen = it },
                     (session as? SessionStatus.Authenticated)?.session?.user?.email,
                     userId,
+                    profile, profileBusy, profileError,
+                    { name, gender, mobile ->
+                        if (accessToken != null && !profileBusy) scope.launch {
+                            profileBusy = true
+                            try {
+                                profile = profileStore.save(accessToken, name, gender, mobile)
+                                profileError = null
+                            } catch (e: Exception) {
+                                profileError = e.message ?: "Could not save your profile."
+                            } finally { profileBusy = false }
+                        }
+                    },
                     theme, colorTheme,
                     { scope.launch { themeStore.set(it) } },
                     { scope.launch { themeStore.setColorTheme(it) } },
@@ -756,6 +784,8 @@ private fun CueApp(
                             activity.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                         } else scope.launch { themeStore.setNotificationIntelligence(true) }
                     },
+                    cloudAnalysisOwner == userId && userId != null,
+                    { enable -> scope.launch { themeStore.setCloudAnalysisOwner(if (enable) userId else null) } },
                     padding
                 )
             }
@@ -792,6 +822,10 @@ private fun YouScreen(
     onSettingsOpen: (Boolean) -> Unit,
     accountEmail: String?,
     accountId: String?,
+    profile: CueProfile?,
+    profileBusy: Boolean,
+    profileError: String?,
+    onSaveProfile: (String, String, String) -> Unit,
     theme: ThemePreference,
     colorTheme: ColorTheme,
     onTheme: (ThemePreference) -> Unit,
@@ -829,9 +863,22 @@ private fun YouScreen(
     onScreenToggle: () -> Unit,
     notificationIntelligence: Boolean,
     onNotificationIntelligence: (Boolean) -> Unit,
+    cloudAnalysisEnabled: Boolean,
+    onCloudAnalysis: (Boolean) -> Unit,
     padding: PaddingValues
 ) {
     var deleteDataPrompt by remember { mutableStateOf(false) }
+    var cloudConsentPrompt by remember { mutableStateOf(false) }
+    var editingProfile by remember(accountId) { mutableStateOf(false) }
+    var editName by remember(accountId) { mutableStateOf("") }
+    var editGender by remember(accountId) { mutableStateOf("") }
+    var editMobile by remember(accountId) { mutableStateOf("") }
+    LaunchedEffect(profile) {
+        profile?.let {
+            editName = it.name; editGender = it.gender; editMobile = it.contactMobile
+            editingProfile = false
+        }
+    }
     Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(24.dp)) {
         if (settingsOpen) androidx.compose.material3.TextButton(onClick = { onSettingsOpen(false) }) {
             Text("←  Back to You")
@@ -852,10 +899,40 @@ private fun YouScreen(
                     style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(5.dp))
                 if (signedIn) {
-                    Text(accountEmail ?: "Google account", style = MaterialTheme.typography.bodyLarge)
-                    accountId?.let { Text("Account ID · ${it.take(8)}…",
+                    Text(profile?.name?.takeIf { it.isNotBlank() } ?: "Add your name",
+                        style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                    Text("Email · ${profile?.email?.takeIf { it.isNotBlank() } ?: accountEmail ?: "Loading…"}",
+                        style = MaterialTheme.typography.bodyMedium)
+                    Text("Gender · ${profile?.gender?.takeIf { it.isNotBlank() } ?: "Optional"}",
+                        style = MaterialTheme.typography.bodyMedium)
+                    Text("Contact mobile · ${profile?.contactMobile?.takeIf { it.isNotBlank() } ?: "Optional"}",
+                        style = MaterialTheme.typography.bodyMedium)
+                    Text("Contact number is not verified for sign-in.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    androidx.compose.material3.TextButton(onClick = { editingProfile = !editingProfile }) {
+                        Text(if (editingProfile) "Cancel editing" else "Edit profile")
+                    }
+                    if (editingProfile) {
+                        androidx.compose.material3.OutlinedTextField(value = editName,
+                            onValueChange = { if (it.length <= 80) editName = it },
+                            label = { Text("Name") }, singleLine = true,
+                            modifier = Modifier.fillMaxWidth())
+                        Spacer(Modifier.height(8.dp))
+                        androidx.compose.material3.OutlinedTextField(value = editGender,
+                            onValueChange = { if (it.length <= 40) editGender = it },
+                            label = { Text("Gender (optional)") }, singleLine = true,
+                            modifier = Modifier.fillMaxWidth())
+                        Spacer(Modifier.height(8.dp))
+                        androidx.compose.material3.OutlinedTextField(value = editMobile,
+                            onValueChange = { if (it.length <= 20) editMobile = it },
+                            label = { Text("Contact mobile (optional)") }, singleLine = true,
+                            modifier = Modifier.fillMaxWidth())
+                        Spacer(Modifier.height(10.dp))
+                        Button(onClick = { onSaveProfile(editName, editGender, editMobile) },
+                            enabled = !profileBusy && editName.isNotBlank()) { Text("Save profile") }
+                    }
+                    profileError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     Spacer(Modifier.height(8.dp))
                 }
                 Text(if (signedIn) "Your Google account keeps your reminders available when you return."
@@ -1052,6 +1129,17 @@ private fun YouScreen(
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
             Column(Modifier.fillMaxWidth().padding(20.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Improve reminder detection", fontWeight = FontWeight.SemiBold)
+                        Text("Optional cloud analysis for clear possible reminders. Sends one candidate line (up to 300 characters) and your timezone to Cue's Supabase function and Google Gemini. A candidate can come from a shared document or screen, but no full file, screenshot or Inbox is sent. Off by default.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(checked = signedIn && cloudAnalysisEnabled, enabled = signedIn,
+                        onCheckedChange = { if (it) cloudConsentPrompt = true else onCloudAnalysis(false) })
+                }
+                Spacer(Modifier.height(20.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(if (screenRunning) "Analysis is active" else "Analyze shared screen",
                         modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
                     Switch(checked = screenRunning, onCheckedChange = { onScreenToggle() },
@@ -1067,6 +1155,16 @@ private fun YouScreen(
                     style = MaterialTheme.typography.bodySmall)
             }
         }
+        if (cloudConsentPrompt) androidx.compose.material3.AlertDialog(
+            onDismissRequest = { cloudConsentPrompt = false },
+            title = { Text("Enable cloud reminder analysis?") },
+            text = { Text("Cue may send one likely reminder line (maximum 300 characters) and your timezone through Cue Supabase to Google Gemini. This is optional; turn it off here anytime. Other content stays on your device.") },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = {
+                cloudConsentPrompt = false; onCloudAnalysis(true)
+            }) { Text("Enable") } },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = {
+                cloudConsentPrompt = false
+            }) { Text("Cancel") } })
         Spacer(Modifier.height(32.dp))
         Text("Notification reminders", style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.SemiBold)

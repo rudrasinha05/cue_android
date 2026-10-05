@@ -38,6 +38,7 @@ class ThemeStore(private val context: Context) {
     private val bedKey = intPreferencesKey("bed_minute")
     private val reminderToneKey = stringPreferencesKey("reminder_tone")
     private val toneRepeatsKey = intPreferencesKey("tone_repeats")
+    private val cloudAnalysisOwnerKey = stringPreferencesKey("cloud_analysis_owner")
     val mode: Flow<ThemePreference> = context.cuePreferences.data.map { preferences ->
         ThemePreference.entries.firstOrNull { it.name == preferences[themeKey] } ?: ThemePreference.SYSTEM
     }
@@ -60,6 +61,13 @@ class ThemeStore(private val context: Context) {
         it[reminderToneKey] ?: "default"
     }
     val toneRepeats: Flow<Int> = context.cuePreferences.data.map { (it[toneRepeatsKey] ?: 3).coerceIn(1, 5) }
+    val cloudAnalysisOwner: Flow<String?> = context.cuePreferences.data.map { it[cloudAnalysisOwnerKey] }
+
+    suspend fun setCloudAnalysisOwner(owner: String?) {
+        context.cuePreferences.edit {
+            if (owner == null) it.remove(cloudAnalysisOwnerKey) else it[cloudAnalysisOwnerKey] = owner
+        }
+    }
 
     suspend fun set(value: ThemePreference) {
         context.cuePreferences.edit { it[themeKey] = value.name }

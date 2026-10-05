@@ -33,7 +33,9 @@ class CaptureIntake(private val context: Context) {
     suspend fun accept(text: String, type: String, titleHint: String? = null, uri: String? = null): Boolean {
         val content = text.trim().take(4000)
         if (content.isEmpty()) { acknowledge("Nothing readable found", "Try sharing text or a clearer image."); return false }
-        val candidate = LocalReminderInterpreter.find(content)
+        val candidate = LocalReminderInterpreter.find(content) ?: runCatching {
+            CloudReminderInterpreter(context).find(content)
+        }.getOrNull()
         val title = candidate?.title ?: content.lineSequence()
             .firstOrNull { it.isNotBlank() }?.trim()?.take(100) ?: "New reminder"
         // An explicit bubble entry or drop is a reminder even when no time can be inferred.

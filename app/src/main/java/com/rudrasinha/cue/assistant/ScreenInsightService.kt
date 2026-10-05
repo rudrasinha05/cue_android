@@ -172,9 +172,9 @@ class ScreenInsightService : Service() {
                     val digest = MessageDigest.getInstance("SHA-256")
                         .digest(candidate.lowercase().toByteArray(Charsets.UTF_8))
                         .joinToString("") { "%02x".format(it) }
-                    if (digest != lastCandidateFingerprint &&
-                        CaptureIntake(applicationContext).accept(candidate, "screen", "Shared screen")) {
+                    if (digest != lastCandidateFingerprint) {
                         lastCandidateFingerprint = digest
+                        CaptureIntake(applicationContext).accept(candidate, "screen", "Shared screen")
                     }
                 }
             } catch (_: Exception) { /* A later frame can still be analyzed. */ }

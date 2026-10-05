@@ -234,8 +234,16 @@ fun CommitmentListScreen(
                                 }, onDate = { selectedDate = it })
                         }
                     }
-                    TextButton(onClick = { selectedDate = today; visibleMonth = YearMonth.from(today) }) {
-                        Text("Today", color = violet)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = { selectedDate = today; visibleMonth = YearMonth.from(today) }) {
+                            Text("Today", color = violet)
+                        }
+                        TextButton(onClick = onDayPlan) {
+                            Icon(Icons.Filled.AutoAwesome, null, modifier = Modifier.size(17.dp))
+                            Spacer(Modifier.width(7.dp))
+                            Text("View my day")
+                        }
                     }
                 } else {
                     val next = active.filter { (it.dueAtMillis ?: 0L) > now }
@@ -274,12 +282,6 @@ fun CommitmentListScreen(
                                 onClick = { selectedView = view },
                                 label = { Text("${view.label} ${matching(view).size}") })
                         }
-                    }
-                    TextButton(onClick = onDayPlan,
-                        modifier = Modifier.align(Alignment.End)) {
-                        Icon(Icons.Filled.AutoAwesome, null, modifier = Modifier.size(17.dp))
-                        Spacer(Modifier.width(7.dp))
-                        Text("View my day")
                     }
                 }
                 if (!notificationsAllowed && active.any { it.dueAtMillis != null }) {
