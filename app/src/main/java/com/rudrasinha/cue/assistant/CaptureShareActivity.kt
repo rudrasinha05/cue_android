@@ -53,10 +53,15 @@ class CaptureShareActivity : Activity() {
                             if (item.uri == null) item.text?.toString()?.let(chunks::add)
                         }
                     }
+                    var unreadable = 0
                     uris.distinct().take(8).forEach { uri ->
-                        chunks += importedText(this@CaptureShareActivity, uri).text
+                        try { chunks += importedText(this@CaptureShareActivity, uri).text }
+                        catch (_: Exception) { unreadable++ }
                     }
-                    chunks.joinToString("\n").take(4000)
+                    if (unreadable > 0 && chunks.isEmpty())
+                        error("$unreadable shared file(s) could not be read. Try copying the item and holding Cue to Paste.")
+                    chunks.map(String::trim).filter(String::isNotBlank).distinct()
+                        .joinToString("\n").take(4000)
                 }
                 if (text.isBlank()) intake.failure("Shared item contained no readable text.")
                 else intake.accept(text, "share", "Shared from another app")

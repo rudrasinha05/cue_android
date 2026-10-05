@@ -486,7 +486,7 @@ class FloatingCueService : Service() {
             }
             val intake = CaptureIntake(applicationContext)
             try {
-                if (parts.isNotEmpty()) intake.accept(parts.joinToString("\n").take(4000), type,
+                if (parts.isNotEmpty()) intake.accept(parts.distinct().joinToString("\n").take(4000), type,
                     if (type == "paste") "Floating Cue paste" else "Floating Cue drop", firstUri)
                 if (blockedFiles > 0) intake.failure(
                     "$blockedFiles file(s) could not be read from this app. Use Share → Cue for those files.")
