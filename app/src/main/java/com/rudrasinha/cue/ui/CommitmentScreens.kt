@@ -88,6 +88,7 @@ fun CommitmentListScreen(
     onDayPlan: () -> Unit,
     externalDraft: CaptureDraft?, onCaptureDismiss: () -> Unit,
     focusTodayToken: Int = 0,
+    onVoice: () -> Unit, onImport: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var selectedView by remember { mutableStateOf(ReminderView.ALL) }
@@ -204,7 +205,20 @@ fun CommitmentListScreen(
                             focusedPlaceholderColor = muted, unfocusedPlaceholderColor = muted,
                             focusedBorderColor = violet, unfocusedBorderColor = muted))
                 }
-                Spacer(Modifier.height(28.dp))
+                Spacer(Modifier.height(16.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedButton(onClick = onVoice, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Filled.Mic, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Speak")
+                    }
+                    OutlinedButton(onClick = onImport, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Filled.AttachFile, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Import")
+                    }
+                }
+                Spacer(Modifier.height(18.dp))
                 if (upcoming) {
                     Surface(shape = RoundedCornerShape(28.dp), color = cardColor,
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {

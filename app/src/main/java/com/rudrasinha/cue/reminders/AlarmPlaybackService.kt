@@ -12,8 +12,15 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import com.rudrasinha.cue.R
+import com.rudrasinha.cue.settings.ThemeStore
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
-/** Plays each selected reminder sound for ten seconds, then releases the audio session. */
+/** Plays the selected sound the configured number of times. */
 class AlarmPlaybackService : Service() {
     companion object {
         const val ACTION_PLAY = "com.rudrasinha.cue.alarm.PLAY"
@@ -24,6 +31,7 @@ class AlarmPlaybackService : Service() {
         private const val NOTICE_ID = 2070
     }
     private val handler = Handler(Looper.getMainLooper())
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var player: MediaPlayer? = null
     private var activeId: String? = null
     private val stop = Runnable { stopSelf() }
@@ -42,13 +50,18 @@ class AlarmPlaybackService : Service() {
         startForeground(NOTICE_ID, Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_cue_foreground)
             .setContentTitle("Cue reminder ringing")
-            .setContentText("Sound stops after 10 seconds")
+            .setContentText("Snooze or dismiss the reminder to stop it")
             .setOngoing(true).build())
         activeId = id
         handler.removeCallbacks(stop)
         player?.release()
         player = null
         val tone = ReminderTones.selected(intent.getStringExtra(EXTRA_TONE).orEmpty())
+        scope.launch {
+        val repeats = ThemeStore(applicationContext).toneRepeats.first()
+        if (activeId != id) return@launch
+        var played = 1
+        val started = android.os.SystemClock.elapsedRealtime()
         val sound = runCatching {
             MediaPlayer().apply {
                 setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM)
@@ -61,18 +74,31 @@ class AlarmPlaybackService : Service() {
                     RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
                         ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
                         ?: android.net.Uri.parse("android.resource://$packageName/raw/cue_tone_01"))
-                isLooping = true
+                isLooping = false
+                setOnCompletionListener { media ->
+                    if (activeId != id) return@setOnCompletionListener
+                    if (played < repeats) {
+                        played++
+                        media.seekTo(0)
+                        media.start()
+                    } else {
+                        handler.postDelayed(stop,
+                            (10_000L - (android.os.SystemClock.elapsedRealtime() - started)).coerceAtLeast(0L))
+                    }
+                }
                 prepare()
                 start()
             }
         }.getOrNull()
         player = sound
-        handler.postDelayed(stop, 10_000L)
+        if (sound == null) stopSelf() else handler.postDelayed(stop, 60_000L)
+        }
         return START_NOT_STICKY
     }
 
     override fun onDestroy() {
         handler.removeCallbacks(stop)
+        scope.cancel()
         player?.release()
         player = null
         super.onDestroy()

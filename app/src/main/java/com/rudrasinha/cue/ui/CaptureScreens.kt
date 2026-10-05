@@ -55,7 +55,6 @@ fun AssistantActionSheet(onDismiss: () -> Unit, onAction: (CueAction) -> Unit) {
                     CueAction.VOICE -> Icons.Filled.Mic
                     CueAction.QUICK -> Icons.Filled.EditNote
                     CueAction.IMPORT -> Icons.Filled.DocumentScanner
-                    CueAction.ASK -> Icons.Filled.AutoAwesome
                     CueAction.DAY -> Icons.Filled.Today
                     CueAction.SETTINGS -> Icons.Filled.Tune
                 }

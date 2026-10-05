@@ -37,6 +37,7 @@ class ThemeStore(private val context: Context) {
     private val wakeKey = intPreferencesKey("wake_minute")
     private val bedKey = intPreferencesKey("bed_minute")
     private val reminderToneKey = stringPreferencesKey("reminder_tone")
+    private val toneRepeatsKey = intPreferencesKey("tone_repeats")
     val mode: Flow<ThemePreference> = context.cuePreferences.data.map { preferences ->
         ThemePreference.entries.firstOrNull { it.name == preferences[themeKey] } ?: ThemePreference.SYSTEM
     }
@@ -58,6 +59,7 @@ class ThemeStore(private val context: Context) {
     val reminderTone: Flow<String> = context.cuePreferences.data.map {
         it[reminderToneKey] ?: "default"
     }
+    val toneRepeats: Flow<Int> = context.cuePreferences.data.map { (it[toneRepeatsKey] ?: 3).coerceIn(1, 5) }
 
     suspend fun set(value: ThemePreference) {
         context.cuePreferences.edit { it[themeKey] = value.name }
@@ -98,5 +100,9 @@ class ThemeStore(private val context: Context) {
 
     suspend fun setReminderTone(id: String) {
         context.cuePreferences.edit { it[reminderToneKey] = id }
+    }
+
+    suspend fun setToneRepeats(count: Int) {
+        context.cuePreferences.edit { it[toneRepeatsKey] = count.coerceIn(1, 5) }
     }
 }

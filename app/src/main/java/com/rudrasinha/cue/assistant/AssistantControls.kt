@@ -16,7 +16,6 @@ enum class CueAction(val key: String, val label: String, val symbol: String) {
     VOICE("voice", "Voice Reminder", "◉"),
     QUICK("quick", "Quick Reminder", "+"),
     IMPORT("import", "Import / Scan", "▤"),
-    ASK("ask", "Ask AI", "✦"),
     DAY("day", "My Day", "▦"),
     SETTINGS("settings", "Assistant Settings", "⚙");
 
@@ -71,7 +70,7 @@ object AssistantControls {
         val builder = Notification.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_cue_foreground)
             .setContentTitle(if (floating) "Floating Cue is on" else "Cue shortcuts")
-            .setContentText("Tap for all six actions")
+            .setContentText("Tap for capture and settings")
             .setContentIntent(shortcut(context, OPEN_MENU, 100))
             .setOngoing(true)
             .setShowWhen(false)

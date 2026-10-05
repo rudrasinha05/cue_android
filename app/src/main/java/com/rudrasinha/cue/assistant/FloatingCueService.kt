@@ -329,8 +329,8 @@ class FloatingCueService : Service() {
     }
 
     private fun addActions(frame: FrameLayout) {
-        val offsets = intArrayOf(56, 78, 84, 84, 78, 56)
-        val tops = intArrayOf(12, 72, 132, 208, 268, 328)
+        val offsets = intArrayOf(56, 78, 84, 78, 56)
+        val tops = intArrayOf(12, 76, 140, 204, 268)
         CueAction.entries.forEachIndexed { index, action ->
             val chip = TextView(this).apply {
                 text = "${action.symbol}   ${action.label}"

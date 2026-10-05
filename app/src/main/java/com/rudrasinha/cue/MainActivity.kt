@@ -176,7 +176,6 @@ class MainActivity : ComponentActivity() {
 private enum class Tab(val label: String, val icon: ImageVector) {
     TODAY("Reminders", Icons.Default.NotificationsActive),
     UPCOMING("Upcoming", Icons.Default.CalendarMonth),
-    AI("AI", Icons.Default.AutoAwesome),
     INBOX("Inbox", Icons.Default.Inbox),
     YOU("You", Icons.Default.AccountCircle)
 }
@@ -201,6 +200,7 @@ private fun CueApp(
     val floatingPreference by themeStore.floatingCue.collectAsState(initial = null)
     val floatingEnabled = floatingPreference == true
     val reminderTone by themeStore.reminderTone.collectAsState(initial = ReminderTones.DEFAULT)
+    val toneRepeats by themeStore.toneRepeats.collectAsState(initial = 3)
     val panelEnabled by themeStore.notificationPanel.collectAsState(initial = false)
     val floatingOpacity by themeStore.floatingOpacity.collectAsState(initial = 0.82f)
     val floatingSize by themeStore.floatingSize.collectAsState(initial = 64)
@@ -256,9 +256,9 @@ private fun CueApp(
     val voiceLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val spoken = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
             ?.firstOrNull()?.trim()
-        if (!spoken.isNullOrBlank()) activity.let {
-            (it as MainActivity).queueCapture(CaptureDraft(UUID.randomUUID().toString(), spoken,
-                CaptureOrigin("voice", "Voice note", spoken), suggestedDue(spoken)))
+        if (!spoken.isNullOrBlank()) scope.launch {
+            try { CaptureIntake(activity.applicationContext).accept(spoken, "voice", "Voice note") }
+            catch (e: Exception) { reminderMessage = e.message ?: "Could not process your voice note." }
         } else if (result.resultCode == Activity.RESULT_OK) reminderMessage = "No speech was captured. Try again."
     }
     val documentLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -269,10 +269,10 @@ private fun CueApp(
                     Intent.FLAG_GRANT_READ_URI_PERMISSION) }
                 val draft = withContext(Dispatchers.IO) { importedText(activity, uri) }
                 reminderMessage = null
-                (activity as MainActivity).queueCapture(draft)
+                CaptureIntake(activity.applicationContext).accept(draft.text,
+                    draft.origin.type, draft.origin.title, draft.origin.uri)
             } catch (e: Exception) {
                 reminderMessage = e.message ?: "Could not read that document."
-                selected = Tab.AI
             }
         }
     }
@@ -396,7 +396,6 @@ private fun CueApp(
                     putExtra(RecognizerIntent.EXTRA_PROMPT, "What would you like to remember?")
                 })
             } catch (_: android.content.ActivityNotFoundException) {
-                selected = Tab.AI
                 reminderMessage = "Speech recognition isn't available. Use Quick reminder instead."
             }
             CueAction.QUICK -> (activity as MainActivity).queueCapture(
@@ -406,7 +405,6 @@ private fun CueApp(
                 "image/png", "image/webp",
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
-            CueAction.ASK -> selected = Tab.AI
             CueAction.DAY -> { selected = Tab.TODAY; todayFocusToken++; dayPlanOpen = true }
             CueAction.SETTINGS -> { selected = Tab.YOU; settingsOpen = true }
         }
@@ -554,12 +552,10 @@ private fun CueApp(
                     { selected = Tab.YOU; settingsOpen = true },
                     { dayPlanOpen = true },
                     captureDraft, onCaptureDismiss, todayFocusToken,
-                    Modifier.padding(padding)
+                    onVoice = { dispatchShortcut(CueAction.VOICE) },
+                    onImport = { dispatchShortcut(CueAction.IMPORT) },
+                    modifier = Modifier.padding(padding)
                 )
-                Tab.AI -> CaptureHub(onVoice = { dispatchShortcut(CueAction.VOICE) },
-                    onDocument = { dispatchShortcut(CueAction.IMPORT) },
-                    onQuick = { dispatchShortcut(CueAction.QUICK) },
-                    message = reminderMessage, modifier = Modifier.padding(padding))
                 Tab.INBOX -> HistoryScreen(history, sources, batches,
                     loadBatch = { id -> database.history().batchById(ownerId, id) },
                     onOpenSource = { value ->
@@ -686,6 +682,7 @@ private fun CueApp(
                             themeStore.setReminderTone(tone)
                         }
                     },
+                    toneRepeats, { count -> scope.launch { themeStore.setToneRepeats(count) } },
                     dailyPlanEnabled, wakeMinute, bedMinute,
                     { enable ->
                         if (!enable) scope.launch { themeStore.setDailyPlanEnabled(false) }
@@ -801,6 +798,8 @@ private fun YouScreen(
     onFullScreenAccess: () -> Unit,
     reminderTone: String,
     onReminderTone: (String) -> Unit,
+    toneRepeats: Int,
+    onToneRepeats: (Int) -> Unit,
     dailyPlanEnabled: Boolean,
     wakeMinute: Int,
     bedMinute: Int,
@@ -876,7 +875,7 @@ private fun YouScreen(
         Spacer(Modifier.height(32.dp))
         Text("Bubble and shortcuts", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(8.dp))
-        Text("Bring your six shortcuts to other apps or your notification panel.",
+        Text("Bring capture shortcuts to other apps or your notification panel.",
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(16.dp))
         Card(shape = RoundedCornerShape(24.dp),
@@ -924,7 +923,7 @@ private fun YouScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Notification shortcuts", fontWeight = FontWeight.SemiBold)
-                        Text("Voice and Quick actions, plus a menu with all six.",
+                        Text("Voice and Quick actions, plus the capture menu.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -940,6 +939,14 @@ private fun YouScreen(
             fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(12.dp))
         ReminderTonePicker(reminderTone, onReminderTone)
+        Spacer(Modifier.height(16.dp))
+        Text("Play tone $toneRepeats times", style = MaterialTheme.typography.titleMedium)
+        Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
+            (1..5).forEach { count ->
+                FilterChip(selected = toneRepeats == count, onClick = { onToneRepeats(count) },
+                    label = { Text("$count") })
+            }
+        }
         Spacer(Modifier.height(16.dp))
         if (!fullScreenAllowed) Card(shape = RoundedCornerShape(22.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
