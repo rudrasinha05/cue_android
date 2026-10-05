@@ -652,41 +652,58 @@ private fun ReminderEditor(item: CommitmentEntity?, suggestedTitle: String, sugg
     run {
         ModalBottomSheet(onDismissRequest = { if (!saving) onDismiss() },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-            containerColor = cardColor, contentColor = ivory,
+            containerColor = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.onSurface,
             dragHandle = { Surface(shape = CircleShape, color = muted,
                 modifier = Modifier.padding(top = 12.dp).size(width = 38.dp, height = 4.dp)) {} }) {
             Column(Modifier.fillMaxWidth().imePadding().verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp).padding(bottom = 18.dp)) {
                 Spacer(Modifier.height(10.dp))
-                Text(if (item == null) "NEW REMINDER" else "EDIT REMINDER",
-                    color = violet, style = MaterialTheme.typography.labelSmall,
+                Text(if (item == null) "Add a reminder" else "Edit reminder",
+                    style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(18.dp))
+                Text("What's worth remembering?", color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium)
+                Spacer(Modifier.height(20.dp))
                 OutlinedTextField(value = title, onValueChange = { title = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Reminder") },
-                    placeholder = { Text("What should Cue remind you about?") },
+                    label = { Text("Remind me to…") },
+                    placeholder = { Text("e.g. Call the doctor") },
                     singleLine = true, shape = RoundedCornerShape(16.dp))
                 Spacer(Modifier.height(14.dp))
                 OutlinedTextField(value = details, onValueChange = { details = it },
                     modifier = Modifier.fillMaxWidth(), label = { Text("Details (optional)") },
                     placeholder = { Text("Add a note or context") }, maxLines = 3,
                     shape = RoundedCornerShape(16.dp))
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(20.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Set an alert", modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.bodyMedium)
+                    Column(Modifier.weight(1f)) {
+                        Text("Alert me", style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold)
+                        Text("Choose when Cue should ring", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                     Switch(checked = alertEnabled, onCheckedChange = { alertEnabled = it })
                 }
                 if (alertEnabled) {
                     Spacer(Modifier.height(12.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(selected = chosenDate == LocalDate.now(),
+                            onClick = { chosenDate = LocalDate.now(); month = YearMonth.from(chosenDate) },
+                            label = { Text("Today") })
+                        FilterChip(selected = chosenDate == LocalDate.now().plusDays(1),
+                            onClick = {
+                                chosenDate = LocalDate.now().plusDays(1)
+                                month = YearMonth.from(chosenDate)
+                            }, label = { Text("Tomorrow") })
+                    }
                     Text("Date", style = MaterialTheme.typography.labelLarge)
                     Spacer(Modifier.height(6.dp))
                     Surface(onClick = {
                         showCalendar = !showCalendar; showTime = false
                         focusManager.clearFocus(); keyboard?.hide()
                     }, shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        color = MaterialTheme.colorScheme.surfaceVariant,
                         modifier = Modifier.fillMaxWidth()) {
                         Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically) {
@@ -694,7 +711,8 @@ private fun ReminderEditor(item: CommitmentEntity?, suggestedTitle: String, sugg
                                 tint = violet, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(10.dp))
                             Text(chosenDate.format(DateTimeFormatter.ofPattern("EEE, d MMM yyyy")),
-                                color = ivory, style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodyMedium,
                                 modifier = Modifier.weight(1f))
                             Icon(Icons.Filled.ChevronRight, contentDescription = "Change date",
                                 tint = muted, modifier = Modifier.size(18.dp))
@@ -707,7 +725,7 @@ private fun ReminderEditor(item: CommitmentEntity?, suggestedTitle: String, sugg
                         showTime = !showTime; showCalendar = false
                         focusManager.clearFocus(); keyboard?.hide()
                     }, shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        color = MaterialTheme.colorScheme.surfaceVariant,
                         modifier = Modifier.fillMaxWidth()) {
                         Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically) {
@@ -716,7 +734,8 @@ private fun ReminderEditor(item: CommitmentEntity?, suggestedTitle: String, sugg
                             Spacer(Modifier.width(10.dp))
                             Text(LocalTime.of(timeState.hour, timeState.minute)
                                 .format(DateTimeFormatter.ofPattern("h:mm a")),
-                                modifier = Modifier.weight(1f), color = ivory)
+                                modifier = Modifier.weight(1f),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Icon(Icons.Filled.ChevronRight, contentDescription = "Change time",
                                 tint = muted, modifier = Modifier.size(18.dp))
                         }
@@ -726,15 +745,16 @@ private fun ReminderEditor(item: CommitmentEntity?, suggestedTitle: String, sugg
                     Spacer(Modifier.height(6.dp))
                     Surface(onClick = { tonePickerOpen = true; focusManager.clearFocus(); keyboard?.hide() },
                         shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.secondaryContainer,
-                        modifier = Modifier.fillMaxWidth().padding(top = 9.dp)) {
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier.fillMaxWidth()) {
                         Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Filled.MusicNote, contentDescription = null, tint = violet,
                                 modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(10.dp))
-                            Text(ReminderTones.selected(chosenTone).label, color = ivory,
-                                style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                            Text(ReminderTones.selected(chosenTone).label,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                             Icon(Icons.Filled.ChevronRight, contentDescription = "Choose reminder sound",
                                 tint = muted, modifier = Modifier.size(18.dp))
                         }
@@ -818,7 +838,9 @@ private fun ReminderEditor(item: CommitmentEntity?, suggestedTitle: String, sugg
                             saveError = e.message ?: "Could not save. Please try again."
                         } finally { saving = false }
                     }
-                }, enabled = valid && !saving, modifier = Modifier.fillMaxWidth()) {
+                }, enabled = valid && !saving,
+                    modifier = Modifier.fillMaxWidth().height(54.dp),
+                    shape = RoundedCornerShape(18.dp)) {
                     Text(if (saving) "Saving…" else if (item == null) "Save reminder" else "Save changes")
                 }
                 Spacer(Modifier.height(12.dp))
