@@ -625,227 +625,228 @@ private fun ReminderEditor(item: CommitmentEntity?, suggestedTitle: String, sugg
     val initialDue = (item?.dueAtMillis ?: suggestedDue)?.let {
         Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault())
     }
-    val suggestedStart = remember { LocalDateTime.now().plusMinutes(10) }
-    val startDate = maxOf(initialDate, suggestedStart.toLocalDate())
+    val start = remember { LocalDateTime.now().plusMinutes(10) }
     var title by remember(item?.id, draftId) { mutableStateOf(item?.title ?: suggestedTitle) }
     var details by remember(item?.id, draftId) { mutableStateOf(item?.details ?: suggestedDetails) }
-    var chosenTone by remember(item?.id, draftId) { mutableStateOf(item?.toneId ?: defaultTone) }
-    var tonePickerOpen by remember { mutableStateOf(false) }
-    var alertEnabled by remember(item?.id, draftId) { mutableStateOf(initialDue != null || item == null) }
-    var chosenDate by remember(item?.id) { mutableStateOf(initialDue?.toLocalDate() ?: startDate) }
-    var month by remember(item?.id) { mutableStateOf(YearMonth.from(chosenDate)) }
-    var showCalendar by remember { mutableStateOf(false) }
-    var showTime by remember { mutableStateOf(false) }
-    var timeMode by remember { mutableStateOf("input") }
+    var notesOpen by remember(item?.id, draftId) { mutableStateOf(details.isNotBlank()) }
+    var tone by remember(item?.id, draftId) { mutableStateOf(item?.toneId ?: defaultTone) }
+    var alert by remember(item?.id, draftId) { mutableStateOf(initialDue != null || item == null) }
+    var date by remember(item?.id, draftId) {
+        mutableStateOf(initialDue?.toLocalDate() ?: maxOf(initialDate, start.toLocalDate()))
+    }
+    var hour by remember(item?.id, draftId) { mutableIntStateOf(initialDue?.hour ?: start.hour) }
+    var minute by remember(item?.id, draftId) { mutableIntStateOf(initialDue?.minute ?: start.minute) }
+    var month by remember(item?.id, draftId) { mutableStateOf(YearMonth.from(date)) }
+    var dateDialog by remember { mutableStateOf(false) }
+    var timeDialog by remember { mutableStateOf(false) }
+    var toneDialog by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     var saveError by remember { mutableStateOf<String?>(null) }
-    val saveScope = rememberCoroutineScope()
+    val scope = rememberCoroutineScope()
+    val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
-    val focusManager = LocalFocusManager.current
-    val initialTime = initialDue?.toLocalTime() ?: suggestedStart.toLocalTime()
-    val timeState = rememberTimePickerState(initialHour = initialTime.hour,
-        initialMinute = initialTime.minute, is24Hour = false)
-    val due = if (alertEnabled) chosenDate.atTime(timeState.hour, timeState.minute)
-        .atZone(ZoneId.systemDefault()).toInstant().toEpochMilli() else null
+    val due = if (alert) date.atTime(hour, minute).atZone(ZoneId.systemDefault())
+        .toInstant().toEpochMilli() else null
     val valid = title.isNotBlank() && (due == null || due > System.currentTimeMillis())
+    val colors = MaterialTheme.colorScheme
 
-    run {
-        ModalBottomSheet(onDismissRequest = { if (!saving) onDismiss() },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-            containerColor = MaterialTheme.colorScheme.surface,
-            contentColor = MaterialTheme.colorScheme.onSurface,
-            dragHandle = { Surface(shape = CircleShape, color = muted,
-                modifier = Modifier.padding(top = 12.dp).size(width = 38.dp, height = 4.dp)) {} }) {
-            Column(Modifier.fillMaxWidth().imePadding().verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp).padding(bottom = 18.dp)) {
+    ModalBottomSheet(onDismissRequest = { if (!saving) onDismiss() },
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = colors.background, contentColor = colors.onBackground,
+        dragHandle = { Surface(shape = CircleShape, color = colors.outlineVariant,
+            modifier = Modifier.padding(top = 12.dp).size(width = 38.dp, height = 4.dp)) {} }) {
+        Column(Modifier.fillMaxWidth().fillMaxHeight(.92f).imePadding()) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(if (item == null) "New reminder" else "Edit reminder",
+                        style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                    Text("One thought, one clear alert.", color = colors.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium)
+                }
+                IconButton(onClick = onDismiss, enabled = !saving) {
+                    Icon(Icons.Filled.Close, contentDescription = "Close")
+                }
+            }
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)) {
                 Spacer(Modifier.height(10.dp))
-                Text(if (item == null) "Add a reminder" else "Edit reminder",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold)
-                Text("What's worth remembering?", color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyMedium)
-                Spacer(Modifier.height(20.dp))
-                OutlinedTextField(value = title, onValueChange = { title = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Remind me to…") },
-                    placeholder = { Text("e.g. Call the doctor") },
-                    singleLine = true, shape = RoundedCornerShape(16.dp))
-                Spacer(Modifier.height(14.dp))
-                OutlinedTextField(value = details, onValueChange = { details = it },
-                    modifier = Modifier.fillMaxWidth(), label = { Text("Details (optional)") },
-                    placeholder = { Text("Add a note or context") }, maxLines = 3,
-                    shape = RoundedCornerShape(16.dp))
-                Spacer(Modifier.height(20.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Alert me", style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold)
-                        Text("Choose when Cue should ring", style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Switch(checked = alertEnabled, onCheckedChange = { alertEnabled = it })
-                }
-                if (alertEnabled) {
-                    Spacer(Modifier.height(12.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(selected = chosenDate == LocalDate.now(),
-                            onClick = { chosenDate = LocalDate.now(); month = YearMonth.from(chosenDate) },
-                            label = { Text("Today") })
-                        FilterChip(selected = chosenDate == LocalDate.now().plusDays(1),
-                            onClick = {
-                                chosenDate = LocalDate.now().plusDays(1)
-                                month = YearMonth.from(chosenDate)
-                            }, label = { Text("Tomorrow") })
-                    }
-                    Text("Date", style = MaterialTheme.typography.labelLarge)
-                    Spacer(Modifier.height(6.dp))
-                    Surface(onClick = {
-                        showCalendar = !showCalendar; showTime = false
-                        focusManager.clearFocus(); keyboard?.hide()
-                    }, shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        modifier = Modifier.fillMaxWidth()) {
-                        Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Filled.CalendarMonth, contentDescription = null,
-                                tint = violet, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(10.dp))
-                            Text(chosenDate.format(DateTimeFormatter.ofPattern("EEE, d MMM yyyy")),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                style = MaterialTheme.typography.bodyMedium,
-                                modifier = Modifier.weight(1f))
-                            Icon(Icons.Filled.ChevronRight, contentDescription = "Change date",
-                                tint = muted, modifier = Modifier.size(18.dp))
-                        }
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    Text("Time", style = MaterialTheme.typography.labelLarge)
-                    Spacer(Modifier.height(6.dp))
-                    Surface(onClick = {
-                        showTime = !showTime; showCalendar = false
-                        focusManager.clearFocus(); keyboard?.hide()
-                    }, shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        modifier = Modifier.fillMaxWidth()) {
-                        Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Filled.Schedule, contentDescription = null,
-                                tint = violet, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(10.dp))
-                            Text(LocalTime.of(timeState.hour, timeState.minute)
-                                .format(DateTimeFormatter.ofPattern("h:mm a")),
-                                modifier = Modifier.weight(1f),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Icon(Icons.Filled.ChevronRight, contentDescription = "Change time",
-                                tint = muted, modifier = Modifier.size(18.dp))
-                        }
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    Text("Ringtone", style = MaterialTheme.typography.labelLarge)
-                    Spacer(Modifier.height(6.dp))
-                    Surface(onClick = { tonePickerOpen = true; focusManager.clearFocus(); keyboard?.hide() },
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        modifier = Modifier.fillMaxWidth()) {
-                        Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Filled.MusicNote, contentDescription = null, tint = violet,
-                                modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(10.dp))
-                            Text(ReminderTones.selected(chosenTone).label,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                            Icon(Icons.Filled.ChevronRight, contentDescription = "Choose reminder sound",
-                                tint = muted, modifier = Modifier.size(18.dp))
-                        }
-                    }
-                    if (tonePickerOpen) ReminderToneChoices(chosenTone, onSelect = { chosenTone = it },
-                        onDismiss = { tonePickerOpen = false })
-                    if (showCalendar) {
-                        Spacer(Modifier.height(14.dp))
-                        CalendarGrid(month, chosenDate, emptyMap(),
-                            onPrevious = { month = month.minusMonths(1) },
-                            onNext = { month = month.plusMonths(1) },
-                            onDate = { chosenDate = it; showCalendar = false },
-                            earliest = LocalDate.now())
-                    }
-                    if (showTime) {
-                        Spacer(Modifier.height(12.dp))
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                            TextButton(onClick = { timeMode = "input" }) {
-                                Text("Type time", color = if (timeMode == "input") violet else muted)
+                Surface(shape = RoundedCornerShape(26.dp), color = colors.surface,
+                    border = BorderStroke(1.dp, colors.outlineVariant)) {
+                    Column(Modifier.fillMaxWidth().padding(18.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Surface(shape = RoundedCornerShape(13.dp), color = colors.primaryContainer) {
+                                Icon(Icons.Filled.Edit, contentDescription = null, tint = colors.primary,
+                                    modifier = Modifier.padding(11.dp).size(21.dp))
                             }
-                            TextButton(onClick = {
-                                timeMode = "dial"; focusManager.clearFocus(); keyboard?.hide()
-                            }) {
-                                Text("Use dial", color = if (timeMode == "dial") violet else muted)
+                            Spacer(Modifier.width(12.dp))
+                            Text("What should I remind you?", style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold)
+                        }
+                        Spacer(Modifier.height(16.dp))
+                        OutlinedTextField(value = title, onValueChange = { if (it.length <= 160) title = it },
+                            modifier = Modifier.fillMaxWidth(), singleLine = true,
+                            placeholder = { Text("e.g. Pay electricity bill") },
+                            label = { Text("Reminder") }, shape = RoundedCornerShape(16.dp))
+                        if (notesOpen) {
+                            Spacer(Modifier.height(10.dp))
+                            OutlinedTextField(value = details, onValueChange = { details = it },
+                                modifier = Modifier.fillMaxWidth(), minLines = 2, maxLines = 4,
+                                label = { Text("Notes (optional)") },
+                                shape = RoundedCornerShape(16.dp))
+                        } else TextButton(onClick = { notesOpen = true }) {
+                            Icon(Icons.Filled.Add, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(5.dp))
+                            Text("Add a note")
+                        }
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+                Surface(shape = RoundedCornerShape(26.dp), color = colors.surface,
+                    border = BorderStroke(1.dp, colors.outlineVariant)) {
+                    Column(Modifier.fillMaxWidth().padding(18.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Surface(shape = RoundedCornerShape(13.dp), color = colors.primaryContainer) {
+                                Icon(Icons.Filled.NotificationsActive, contentDescription = null,
+                                    tint = colors.primary, modifier = Modifier.padding(11.dp).size(21.dp))
+                            }
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text("Alert", style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold)
+                                Text(if (alert) "Cue will ring at your chosen time" else "Save without ringing",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = colors.onSurfaceVariant)
+                            }
+                            Switch(checked = alert, onCheckedChange = { alert = it })
+                        }
+                        if (alert) {
+                            Spacer(Modifier.height(16.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                FilterChip(selected = date == LocalDate.now(),
+                                    onClick = { date = LocalDate.now(); month = YearMonth.from(date) },
+                                    label = { Text("Today") })
+                                FilterChip(selected = date == LocalDate.now().plusDays(1),
+                                    onClick = {
+                                        date = LocalDate.now().plusDays(1)
+                                        month = YearMonth.from(date)
+                                    }, label = { Text("Tomorrow") })
+                                FilterChip(selected = date != LocalDate.now() &&
+                                    date != LocalDate.now().plusDays(1),
+                                    onClick = { dateDialog = true; focus.clearFocus(); keyboard?.hide() },
+                                    label = { Text("Pick date") })
+                            }
+                            Spacer(Modifier.height(10.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Surface(onClick = {
+                                    dateDialog = true; focus.clearFocus(); keyboard?.hide()
+                                }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(17.dp),
+                                    color = colors.primaryContainer.copy(alpha = .38f)) {
+                                    Column(Modifier.padding(14.dp)) {
+                                        Text("DATE", style = MaterialTheme.typography.labelSmall,
+                                            color = colors.onSurfaceVariant)
+                                        Spacer(Modifier.height(4.dp))
+                                        Text(date.format(DateTimeFormatter.ofPattern("d MMM, EEE")),
+                                            style = MaterialTheme.typography.titleMedium,
+                                            maxLines = 1, color = colors.onSurface)
+                                    }
+                                }
+                                Surface(onClick = {
+                                    timeDialog = true; focus.clearFocus(); keyboard?.hide()
+                                }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(17.dp),
+                                    color = colors.primaryContainer.copy(alpha = .38f)) {
+                                    Column(Modifier.padding(14.dp)) {
+                                        Text("TIME", style = MaterialTheme.typography.labelSmall,
+                                            color = colors.onSurfaceVariant)
+                                        Spacer(Modifier.height(4.dp))
+                                        Text(LocalTime.of(hour, minute)
+                                            .format(DateTimeFormatter.ofPattern("h:mm a")),
+                                            style = MaterialTheme.typography.titleMedium,
+                                            maxLines = 1, color = colors.onSurface)
+                                    }
+                                }
+                            }
+                            if (due != null && due <= System.currentTimeMillis()) {
+                                Spacer(Modifier.height(9.dp))
+                                Text("Choose a future time to turn on the alert.", color = colors.error,
+                                    style = MaterialTheme.typography.bodySmall)
+                            }
+                            Spacer(Modifier.height(14.dp))
+                            Surface(onClick = { toneDialog = true; focus.clearFocus(); keyboard?.hide() },
+                                shape = RoundedCornerShape(16.dp),
+                                color = colors.surfaceVariant.copy(alpha = .65f)) {
+                                Row(Modifier.fillMaxWidth().padding(13.dp),
+                                    verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Filled.MusicNote, null, tint = colors.primary,
+                                        modifier = Modifier.size(20.dp))
+                                    Spacer(Modifier.width(10.dp))
+                                    Text("Sound", style = MaterialTheme.typography.bodyMedium,
+                                        modifier = Modifier.weight(1f))
+                                    Text(ReminderTones.selected(tone).label,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = colors.onSurfaceVariant)
+                                    Icon(Icons.Filled.ChevronRight, "Choose sound",
+                                        tint = colors.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                                }
                             }
                         }
-                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                            if (timeMode == "input") TimeInput(state = timeState)
-                            else TimePicker(state = timeState)
-                        }
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically) {
-                            TextButton(onClick = {
-                                val total = (timeState.hour * 60 + timeState.minute - 5 + 1440) % 1440
-                                timeState.hour = total / 60; timeState.minute = total % 60
-                            }) { Text("− 5 min") }
-                            Text(LocalTime.of(timeState.hour, timeState.minute)
-                                .format(DateTimeFormatter.ofPattern("h:mm a")),
-                                modifier = Modifier.padding(horizontal = 8.dp)
-                                    .pointerInput(timeState) {
-                                        var distance = 0f
-                                        detectVerticalDragGestures(
-                                            onDragEnd = { distance = 0f },
-                                            onVerticalDrag = { change, amount ->
-                                                change.consume()
-                                                distance += amount
-                                                if (kotlin.math.abs(distance) >= 24f) {
-                                                    val delta = if (distance < 0f) 5 else -5
-                                                    val total = (timeState.hour * 60 +
-                                                        timeState.minute + delta + 1440) % 1440
-                                                    timeState.hour = total / 60
-                                                    timeState.minute = total % 60
-                                                    distance = 0f
-                                                }
-                                            })
-                                    })
-                            TextButton(onClick = {
-                                val total = (timeState.hour * 60 + timeState.minute + 5) % 1440
-                                timeState.hour = total / 60; timeState.minute = total % 60
-                            }) { Text("+ 5 min") }
-                        }
-                        Text("Swipe the time up or down to adjust it.", color = muted,
-                            style = MaterialTheme.typography.bodySmall)
-                        TextButton(onClick = { showTime = false },
-                            modifier = Modifier.align(Alignment.End)) { Text("Done") }
-                    }
-                    if (due != null && due <= System.currentTimeMillis()) {
-                        Spacer(Modifier.height(8.dp))
-                        Text("Choose a future date and time.", color = coral,
-                            style = MaterialTheme.typography.bodySmall)
                     }
                 }
-                Spacer(Modifier.height(24.dp))
-                saveError?.let { Text(it, color = coral, style = MaterialTheme.typography.bodySmall) }
-                Button(onClick = {
-                    if (!saving) saveScope.launch {
-                        saving = true
-                        saveError = null
-                        try { onSave(title.trim(), details.trim().ifBlank { null }, due, chosenTone) }
-                        catch (e: Exception) {
-                            saveError = e.message ?: "Could not save. Please try again."
-                        } finally { saving = false }
+                Spacer(Modifier.height(20.dp))
+            }
+            Surface(color = colors.background, shadowElevation = 10.dp) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp)) {
+                    saveError?.let { Text(it, color = colors.error,
+                        style = MaterialTheme.typography.bodySmall) }
+                    Button(onClick = {
+                        if (!saving) scope.launch {
+                            saving = true; saveError = null
+                            try { onSave(title.trim(), details.trim().ifBlank { null }, due, tone) }
+                            catch (e: Exception) {
+                                saveError = e.message ?: "Could not save. Please try again."
+                            } finally { saving = false }
+                        }
+                    }, enabled = valid && !saving, modifier = Modifier.fillMaxWidth().height(56.dp),
+                        shape = RoundedCornerShape(18.dp)) {
+                        Icon(Icons.Filled.Check, null, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(if (saving) "Saving…" else if (item == null) "Save reminder" else "Save changes")
                     }
-                }, enabled = valid && !saving,
-                    modifier = Modifier.fillMaxWidth().height(54.dp),
-                    shape = RoundedCornerShape(18.dp)) {
-                    Text(if (saving) "Saving…" else if (item == null) "Save reminder" else "Save changes")
                 }
-                Spacer(Modifier.height(12.dp))
             }
         }
+    }
+    if (toneDialog) ReminderToneChoices(tone, onSelect = { tone = it },
+        onDismiss = { toneDialog = false })
+    if (dateDialog) AlertDialog(onDismissRequest = { dateDialog = false },
+        title = { Text("Choose a date") },
+        text = { CalendarGrid(month, date, emptyMap(),
+            onPrevious = { month = month.minusMonths(1) },
+            onNext = { month = month.plusMonths(1) },
+            onDate = { date = it; dateDialog = false }, earliest = LocalDate.now()) },
+        confirmButton = { TextButton(onClick = { dateDialog = false }) { Text("Done") } })
+    if (timeDialog) {
+        var mode by remember { mutableStateOf("input") }
+        val picker = rememberTimePickerState(initialHour = hour, initialMinute = minute,
+            is24Hour = false)
+        AlertDialog(onDismissRequest = { timeDialog = false },
+            title = { Text("Choose a time") },
+            text = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Row {
+                        TextButton(onClick = { mode = "input" }) { Text("Type") }
+                        TextButton(onClick = { mode = "dial" }) { Text("Dial") }
+                    }
+                    if (mode == "input") TimeInput(state = picker) else TimePicker(state = picker)
+                    Text("You can type the numbers or use the dial.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            },
+            confirmButton = { TextButton(onClick = {
+                hour = picker.hour; minute = picker.minute; timeDialog = false
+            }) { Text("Set time") } },
+            dismissButton = { TextButton(onClick = { timeDialog = false }) { Text("Cancel") } })
     }
 }
 
