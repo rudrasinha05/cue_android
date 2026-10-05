@@ -8,8 +8,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.Lightbulb
@@ -23,12 +23,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -612,10 +610,9 @@ private fun ReminderEditor(item: CommitmentEntity?, suggestedTitle: String, sugg
     var alertEnabled by remember(item?.id, draftId) { mutableStateOf(initialDue != null || item == null) }
     var chosenDate by remember(item?.id) { mutableStateOf(initialDue?.toLocalDate() ?: startDate) }
     var month by remember(item?.id) { mutableStateOf(YearMonth.from(chosenDate)) }
-    var showNote by remember(item?.id, draftId) { mutableStateOf(details.isNotBlank()) }
     var showCalendar by remember { mutableStateOf(false) }
     var showTime by remember { mutableStateOf(false) }
-    val titleFocus = remember { FocusRequester() }
+    var timeMode by remember { mutableStateOf("input") }
     val keyboard = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
     val initialTime = initialDue?.toLocalTime() ?: suggestedStart.toLocalTime()
@@ -631,7 +628,6 @@ private fun ReminderEditor(item: CommitmentEntity?, suggestedTitle: String, sugg
             containerColor = cardColor, contentColor = ivory,
             dragHandle = { Surface(shape = CircleShape, color = muted,
                 modifier = Modifier.padding(top = 12.dp).size(width = 38.dp, height = 4.dp)) {} }) {
-            LaunchedEffect(Unit) { titleFocus.requestFocus(); keyboard?.show() }
             Column(Modifier.fillMaxWidth().imePadding().verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp).padding(bottom = 18.dp)) {
                 Spacer(Modifier.height(10.dp))
@@ -639,35 +635,26 @@ private fun ReminderEditor(item: CommitmentEntity?, suggestedTitle: String, sugg
                     color = violet, style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(18.dp))
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    BasicTextField(value = title, onValueChange = { title = it },
-                        modifier = Modifier.weight(1f).focusRequester(titleFocus),
-                        singleLine = true, cursorBrush = SolidColor(violet),
-                        textStyle = MaterialTheme.typography.titleLarge.copy(color = ivory),
-                        decorationBox = { inner ->
-                            Box {
-                                if (title.isEmpty()) Text("What do you want to remember?", color = muted,
-                                    style = MaterialTheme.typography.titleLarge)
-                                inner()
-                            }
-                        })
-                    Spacer(Modifier.width(14.dp))
-                }
+                OutlinedTextField(value = title, onValueChange = { title = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Reminder") },
+                    placeholder = { Text("What should Cue remind you about?") },
+                    singleLine = true, shape = RoundedCornerShape(16.dp))
+                Spacer(Modifier.height(14.dp))
+                OutlinedTextField(value = details, onValueChange = { details = it },
+                    modifier = Modifier.fillMaxWidth(), label = { Text("Details (optional)") },
+                    placeholder = { Text("Add a note or context") }, maxLines = 3,
+                    shape = RoundedCornerShape(16.dp))
                 Spacer(Modifier.height(14.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Remind me", modifier = Modifier.weight(1f),
+                    Text("Set an alert", modifier = Modifier.weight(1f),
                         style = MaterialTheme.typography.bodyMedium)
                     Switch(checked = alertEnabled, onCheckedChange = { alertEnabled = it })
                 }
-                if (showNote) {
-                    Spacer(Modifier.height(16.dp))
-                    OutlinedTextField(value = details, onValueChange = { details = it },
-                        label = { Text("Note") }, placeholder = { Text("Add details") },
-                        modifier = Modifier.fillMaxWidth(), maxLines = 4,
-                        shape = RoundedCornerShape(16.dp))
-                }
                 if (alertEnabled) {
                     Spacer(Modifier.height(12.dp))
+                    Text("Date", style = MaterialTheme.typography.labelLarge)
+                    Spacer(Modifier.height(6.dp))
                     Surface(onClick = {
                         showCalendar = !showCalendar; showTime = false
                         focusManager.clearFocus(); keyboard?.hide()
@@ -676,18 +663,40 @@ private fun ReminderEditor(item: CommitmentEntity?, suggestedTitle: String, sugg
                         modifier = Modifier.fillMaxWidth()) {
                         Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Filled.NotificationsActive, contentDescription = null,
+                            Icon(Icons.Filled.CalendarMonth, contentDescription = null,
                                 tint = violet, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(10.dp))
-                            Text(chosenDate.format(DateTimeFormatter.ofPattern("EEE, d MMM")) + " · " +
-                                LocalTime.of(timeState.hour, timeState.minute)
-                                    .format(DateTimeFormatter.ofPattern("h:mm a")),
+                            Text(chosenDate.format(DateTimeFormatter.ofPattern("EEE, d MMM yyyy")),
                                 color = ivory, style = MaterialTheme.typography.bodySmall,
                                 modifier = Modifier.weight(1f))
-                            Icon(Icons.Filled.ChevronRight, contentDescription = "Change alert",
+                            Icon(Icons.Filled.ChevronRight, contentDescription = "Change date",
                                 tint = muted, modifier = Modifier.size(18.dp))
                         }
                     }
+                    Spacer(Modifier.height(12.dp))
+                    Text("Time", style = MaterialTheme.typography.labelLarge)
+                    Spacer(Modifier.height(6.dp))
+                    Surface(onClick = {
+                        showTime = !showTime; showCalendar = false
+                        focusManager.clearFocus(); keyboard?.hide()
+                    }, shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        modifier = Modifier.fillMaxWidth()) {
+                        Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Filled.Schedule, contentDescription = null,
+                                tint = violet, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(10.dp))
+                            Text(LocalTime.of(timeState.hour, timeState.minute)
+                                .format(DateTimeFormatter.ofPattern("h:mm a")),
+                                modifier = Modifier.weight(1f), color = ivory)
+                            Icon(Icons.Filled.ChevronRight, contentDescription = "Change time",
+                                tint = muted, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Text("Ringtone", style = MaterialTheme.typography.labelLarge)
+                    Spacer(Modifier.height(6.dp))
                     Surface(onClick = { tonePickerOpen = true; focusManager.clearFocus(); keyboard?.hide() },
                         shape = RoundedCornerShape(16.dp),
                         color = MaterialTheme.colorScheme.secondaryContainer,
@@ -697,7 +706,7 @@ private fun ReminderEditor(item: CommitmentEntity?, suggestedTitle: String, sugg
                             Icon(Icons.Filled.MusicNote, contentDescription = null, tint = violet,
                                 modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(10.dp))
-                            Text("Sound · ${ReminderTones.selected(chosenTone).label}", color = ivory,
+                            Text(ReminderTones.selected(chosenTone).label, color = ivory,
                                 style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                             Icon(Icons.Filled.ChevronRight, contentDescription = "Choose reminder sound",
                                 tint = muted, modifier = Modifier.size(18.dp))
@@ -715,9 +724,53 @@ private fun ReminderEditor(item: CommitmentEntity?, suggestedTitle: String, sugg
                     }
                     if (showTime) {
                         Spacer(Modifier.height(12.dp))
-                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                            TimePicker(state = timeState)
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                            TextButton(onClick = { timeMode = "input" }) {
+                                Text("Type time", color = if (timeMode == "input") violet else muted)
+                            }
+                            TextButton(onClick = {
+                                timeMode = "dial"; focusManager.clearFocus(); keyboard?.hide()
+                            }) {
+                                Text("Use dial", color = if (timeMode == "dial") violet else muted)
+                            }
                         }
+                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            if (timeMode == "input") TimeInput(state = timeState)
+                            else TimePicker(state = timeState)
+                        }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically) {
+                            TextButton(onClick = {
+                                val total = (timeState.hour * 60 + timeState.minute - 5 + 1440) % 1440
+                                timeState.hour = total / 60; timeState.minute = total % 60
+                            }) { Text("− 5 min") }
+                            Text(LocalTime.of(timeState.hour, timeState.minute)
+                                .format(DateTimeFormatter.ofPattern("h:mm a")),
+                                modifier = Modifier.padding(horizontal = 8.dp)
+                                    .pointerInput(timeState) {
+                                        var distance = 0f
+                                        detectVerticalDragGestures(
+                                            onDragEnd = { distance = 0f },
+                                            onVerticalDrag = { change, amount ->
+                                                change.consume()
+                                                distance += amount
+                                                if (kotlin.math.abs(distance) >= 24f) {
+                                                    val delta = if (distance < 0f) 5 else -5
+                                                    val total = (timeState.hour * 60 +
+                                                        timeState.minute + delta + 1440) % 1440
+                                                    timeState.hour = total / 60
+                                                    timeState.minute = total % 60
+                                                    distance = 0f
+                                                }
+                                            })
+                                    })
+                            TextButton(onClick = {
+                                val total = (timeState.hour * 60 + timeState.minute + 5) % 1440
+                                timeState.hour = total / 60; timeState.minute = total % 60
+                            }) { Text("+ 5 min") }
+                        }
+                        Text("Swipe the time up or down to adjust it.", color = muted,
+                            style = MaterialTheme.typography.bodySmall)
                         TextButton(onClick = { showTime = false },
                             modifier = Modifier.align(Alignment.End)) { Text("Done") }
                     }
@@ -732,54 +785,9 @@ private fun ReminderEditor(item: CommitmentEntity?, suggestedTitle: String, sugg
                     enabled = valid, modifier = Modifier.fillMaxWidth()) {
                     Text(if (item == null) "Save reminder" else "Save changes")
                 }
-                Spacer(Modifier.height(14.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    QuickAction(Icons.Outlined.Notes, "Add note", showNote) { showNote = !showNote }
-                    QuickAction(Icons.Filled.CalendarMonth, "Choose date", showCalendar) {
-                        alertEnabled = true; showCalendar = !showCalendar; showTime = false
-                        focusManager.clearFocus(); keyboard?.hide()
-                    }
-                    QuickAction(Icons.Filled.Schedule, "Choose time", showTime) {
-                        alertEnabled = true; showTime = !showTime; showCalendar = false
-                        focusManager.clearFocus(); keyboard?.hide()
-                    }
-                    QuickAction(Icons.Filled.NotificationsOff, "Toggle alert", !alertEnabled) {
-                        alertEnabled = !alertEnabled; showCalendar = false; showTime = false
-                    }
-                    QuickAction(Icons.Filled.FormatListBulleted, "Add bulleted note", false) {
-                        details += if (details.isBlank()) "• " else "\n• "
-                        showNote = true
-                    }
-                }
+                Spacer(Modifier.height(12.dp))
             }
         }
-    }
-}
-
-@Composable
-private fun QuickAction(icon: ImageVector, description: String, selected: Boolean,
-    onClick: () -> Unit) {
-    val label = when (description) {
-        "Add note" -> "Note"
-        "Choose date" -> "Date"
-        "Choose time" -> "Time"
-        "Toggle alert" -> "Alert"
-        else -> "List"
-    }
-    Column(horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.width(59.dp).clickable(onClick = onClick)) {
-        Surface(shape = RoundedCornerShape(16.dp), color =
-            if (selected) MaterialTheme.colorScheme.primaryContainer
-            else MaterialTheme.colorScheme.secondaryContainer,
-            border = if (selected) BorderStroke(1.dp, violet) else null) {
-            Box(Modifier.size(50.dp), contentAlignment = Alignment.Center) {
-                Icon(icon, contentDescription = description,
-                    tint = if (selected) violet else ivory, modifier = Modifier.size(22.dp))
-            }
-        }
-        Spacer(Modifier.height(5.dp))
-        Text(label, color = if (selected) violet else muted,
-            style = MaterialTheme.typography.labelSmall)
     }
 }
 
