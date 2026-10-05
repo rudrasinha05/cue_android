@@ -53,6 +53,10 @@ class AccountData(private val database: CueDatabase, private val scheduler: Remi
 
     suspend fun delete(ownerId: String) {
         if (ownerId != "guest") cloud.deleteAccountData()
+        deleteLocal(ownerId)
+    }
+
+    suspend fun deleteLocal(ownerId: String) {
         scheduler.cancelOwner(ownerId)
         database.withTransaction {
             database.history().deleteBatchesForOwner(ownerId)

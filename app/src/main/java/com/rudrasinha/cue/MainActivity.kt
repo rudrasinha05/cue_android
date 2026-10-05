@@ -680,6 +680,28 @@ private fun CueApp(
                             } finally { accountBusy = false }
                         }
                     },
+                    {
+                        if (userId != null && accessToken != null && !accountBusy) scope.launch {
+                            accountBusy = true
+                            accountMessage = null
+                            try {
+                                profileStore.deleteAccount(accessToken)
+                                activity.stopService(Intent(activity, FloatingCueService::class.java))
+                                activity.stopService(Intent(activity, ScreenInsightService::class.java))
+                                themeStore.setFloatingCue(false)
+                                themeStore.setCloudAnalysisOwner(null)
+                                AccountData(database, scheduler, cloud).deleteLocal(userId)
+                                cloud.clearAccountCache(userId)
+                                scheduler.setActiveOwner(null)
+                                val signedOut = runCatching { auth.signOut() }.isSuccess
+                                accountMessage = if (signedOut)
+                                    "Your Cue account and its data were deleted."
+                                else "Cue account deleted, but local sign-out did not finish. Restart Cue; if the old profile still appears, tap Sign out."
+                            } catch (e: Exception) {
+                                accountMessage = e.message ?: "Account deletion failed. Try again online."
+                            } finally { accountBusy = false }
+                        }
+                    },
                     floatingEnabled, panelEnabled, floatingOpacity, floatingSize,
                     Settings.canDrawOverlays(activity), controlMessage,
                     { enable ->
@@ -837,6 +859,7 @@ private fun YouScreen(
     onSignOut: () -> Unit,
     onExportData: () -> Unit,
     onDeleteData: () -> Unit,
+    onDeleteAccount: () -> Unit,
     floatingEnabled: Boolean,
     panelEnabled: Boolean,
     floatingOpacity: Float,
@@ -868,6 +891,7 @@ private fun YouScreen(
     padding: PaddingValues
 ) {
     var deleteDataPrompt by remember { mutableStateOf(false) }
+    var deleteAccountPrompt by remember { mutableStateOf(false) }
     var cloudConsentPrompt by remember { mutableStateOf(false) }
     var editingProfile by remember(accountId) { mutableStateOf(false) }
     var editName by remember(accountId) { mutableStateOf("") }
@@ -958,9 +982,13 @@ private fun YouScreen(
                     onClick = { deleteDataPrompt = true }, enabled = !accountBusy) {
                     Text(if (signedIn) "Delete my Cue data everywhere" else "Delete reminders on this device")
                 }
-                if (signedIn) Text("Cue login profile deletion is not available yet. This button deletes Cue data, not your Google account.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (signedIn) {
+                    androidx.compose.material3.TextButton(onClick = { deleteAccountPrompt = true },
+                        enabled = !accountBusy) { Text("Delete Cue account") }
+                    Text("Removes your Cue login profile and synced data. Your Google account is unaffected.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         }
         Spacer(Modifier.height(18.dp))
@@ -1248,5 +1276,15 @@ private fun YouScreen(
         }) { Text("Delete all") } },
         dismissButton = { androidx.compose.material3.TextButton(onClick = {
             deleteDataPrompt = false
+        }) { Text("Cancel") } })
+    if (deleteAccountPrompt) androidx.compose.material3.AlertDialog(
+        onDismissRequest = { deleteAccountPrompt = false },
+        title = { Text("Delete your Cue account?") },
+        text = { Text("This permanently removes your Cue profile, reminders, sources and history. Export your data first if you need a copy. Your Google account will remain. This cannot be undone.") },
+        confirmButton = { androidx.compose.material3.TextButton(onClick = {
+            deleteAccountPrompt = false; onDeleteAccount()
+        }) { Text("Delete Cue account", color = MaterialTheme.colorScheme.error) } },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = {
+            deleteAccountPrompt = false
         }) { Text("Cancel") } })
 }

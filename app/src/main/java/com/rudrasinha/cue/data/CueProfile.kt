@@ -28,6 +28,30 @@ class CueProfileStore {
         return request(token, "PUT", body)
     }
 
+    suspend fun deleteAccount(token: String) = withContext(Dispatchers.IO) {
+        val connection = URL("${BuildConfig.SUPABASE_URL}/functions/v1/cue-delete-account")
+            .openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = "POST"
+            connection.connectTimeout = 8000
+            connection.readTimeout = 12000
+            connection.doOutput = true
+            connection.setRequestProperty("apikey", BuildConfig.SUPABASE_KEY)
+            connection.setRequestProperty("Authorization", "Bearer $token")
+            connection.setRequestProperty("Content-Type", "application/json")
+            connection.outputStream.use {
+                it.write("{\"confirm\":\"DELETE MY CUE ACCOUNT\"}".toByteArray(Charsets.UTF_8))
+            }
+            if (connection.responseCode !in 200..299) {
+                val message = runCatching {
+                    JSONObject(connection.errorStream.bufferedReader().use { it.readText() })
+                        .optString("message")
+                }.getOrNull()
+                error(message?.takeIf { it.isNotBlank() } ?: "Account deletion failed. Try again online.")
+            }
+        } finally { connection.disconnect() }
+    }
+
     private suspend fun request(token: String, method: String, body: JSONObject? = null): CueProfile =
         withContext(Dispatchers.IO) {
             val connection = URL("${BuildConfig.SUPABASE_URL}/auth/v1/user")
