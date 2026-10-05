@@ -75,11 +75,15 @@ fun ReminderToneChoices(selected: String, onSelect: (String) -> Unit,
         player?.let { runCatching { it.stop(); it.release() } }
         player = null
         player = runCatching {
-            if (tone.resource != null) MediaPlayer.create(context, tone.resource)
-            else MediaPlayer().apply {
+            MediaPlayer().apply {
                 setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
-                setDataSource(context, RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION))
+                if (tone.resource != null) {
+                    context.resources.openRawResourceFd(tone.resource)?.use { file ->
+                        setDataSource(file.fileDescriptor, file.startOffset, file.length)
+                    } ?: error("Sound unavailable")
+                } else setDataSource(context,
+                    RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION))
                 prepare()
             }
         }.getOrNull()?.also { sound ->

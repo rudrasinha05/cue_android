@@ -750,7 +750,7 @@ private fun ReminderEditor(item: CommitmentEntity?, suggestedTitle: String, sugg
                     border = BorderStroke(1.dp, colors.outlineVariant)) {
                     Column(Modifier.fillMaxWidth().padding(16.dp)) {
                         Text("Image or document", style = MaterialTheme.typography.titleMedium)
-                        Text(attachment?.title ?: "Keep a file with this reminder",
+                        Text(attachment?.title ?: "Keep a file with this reminder on this device",
                             style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
                         TextButton(onClick = { attachmentPicker.launch(arrayOf("*/*")) }) {
                             Text(if (attachment == null) "Add file" else "Change file")
