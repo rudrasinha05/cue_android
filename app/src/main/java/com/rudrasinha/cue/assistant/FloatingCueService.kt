@@ -7,6 +7,8 @@ import android.content.Intent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.IntentFilter
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.PixelFormat
@@ -45,6 +47,7 @@ class FloatingCueService : Service() {
             if (intent.action == Intent.ACTION_SCREEN_OFF) {
                 expanded = false
                 quickEntry = false
+                pasteEntry = false
                 if (root != null) showWindow()
             } else if (intent.action == Intent.ACTION_USER_PRESENT && root != null) showWindow()
         }
@@ -55,6 +58,8 @@ class FloatingCueService : Service() {
     private var root: FrameLayout? = null
     private var expanded = false
     private var quickEntry = false
+    private var pasteEntry = false
+    private var closeTarget: TextView? = null
     private var rightEdge = true
     private var centerY = 0
     private var opacity = 0.82f
@@ -65,8 +70,8 @@ class FloatingCueService : Service() {
     private var surface = Color.rgb(37, 34, 53)
     private var onSurface = Color.WHITE
     private val size get() = dp(sizeDp)
-    private val menuWidth get() = dp(if (quickEntry) 260 else 300)
-    private val menuHeight get() = dp(if (quickEntry) 210 else 300)
+    private val menuWidth get() = dp(if (quickEntry) 260 else if (pasteEntry) 190 else 300)
+    private val menuHeight get() = dp(if (quickEntry) 210 else if (pasteEntry) 135 else 300)
     private val hidden get() = dp(14)
     private val screenWidth get() = resources.displayMetrics.widthPixels
     private val screenHeight get() = resources.displayMetrics.heightPixels
@@ -74,6 +79,16 @@ class FloatingCueService : Service() {
         override fun run() {
             if (!Settings.canDrawOverlays(this@FloatingCueService)) stopSelf()
             else handler.postDelayed(this, 5000)
+        }
+    }
+    private val routineCheck = object : Runnable {
+        override fun run() {
+            captureScope.launch {
+                ReminderScheduler(applicationContext).activeOwnerId()?.let { owner ->
+                    runCatching { UsagePatternStore(applicationContext).capture(owner) }
+                }
+            }
+            handler.postDelayed(this, 60 * 60_000L)
         }
     }
     private val windowParams = WindowManager.LayoutParams().apply {
@@ -156,6 +171,8 @@ class FloatingCueService : Service() {
             if (expanded) 1f else opacity
         handler.removeCallbacks(permissionCheck)
         handler.postDelayed(permissionCheck, 5000)
+        handler.removeCallbacks(routineCheck)
+        handler.post(routineCheck)
         return START_STICKY
     }
 
@@ -170,7 +187,9 @@ class FloatingCueService : Service() {
 
     override fun onDestroy() {
         handler.removeCallbacks(permissionCheck)
+        handler.removeCallbacks(routineCheck)
         unregisterReceiver(unlockReceiver)
+        hideCloseTarget()
         captureScope.cancel()
         root?.let { runCatching { windows.removeViewImmediate(it) } }
         root = null
@@ -185,7 +204,7 @@ class FloatingCueService : Service() {
         if (!Settings.canDrawOverlays(this)) { stopSelf(); return }
         val width = if (expanded) menuWidth else size
         val height = if (expanded) menuHeight else size
-        windowParams.flags = if (quickEntry && expanded)
+        windowParams.flags = if ((quickEntry || pasteEntry) && expanded)
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
         else WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
@@ -202,7 +221,9 @@ class FloatingCueService : Service() {
 
         val frame = FrameLayout(this)
         if (expanded) {
-            if (quickEntry) addQuickEntry(frame) else addActions(frame)
+            if (quickEntry) addQuickEntry(frame)
+            else if (pasteEntry) addPasteOption(frame)
+            else addActions(frame)
         }
         val bubble = TextView(this).apply {
             tag = "bubble"
@@ -210,7 +231,7 @@ class FloatingCueService : Service() {
             textSize = (18f * sizeDp / 64f).coerceIn(14f, 24f)
             typeface = android.graphics.Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
-            contentDescription = "Floating Cue. Tap for actions; drag to move."
+            contentDescription = "Floating Cue. Tap for actions, hold to paste, or drag to bottom to close."
             setTextColor(onAccent)
             background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
                 intArrayOf(accent, Color.rgb(Color.red(accent) * 3 / 4,
@@ -223,7 +244,7 @@ class FloatingCueService : Service() {
             setOnClickListener {
                 if (locked()) return@setOnClickListener
                 expanded = !expanded
-                if (!expanded) quickEntry = false
+                if (!expanded) { quickEntry = false; pasteEntry = false }
                 showWindow()
             }
         }
@@ -244,41 +265,8 @@ class FloatingCueService : Service() {
                     if (locked()) return@setOnDragListener false
                     view.scaleX = 1f; view.scaleY = 1f
                     (view as TextView).text = "✓"
-                    val clip = event.clipData
-                    if (clip == null || clip.itemCount == 0) return@setOnDragListener false
-                    val intake = CaptureIntake(applicationContext)
-                    captureScope.launch {
-                        val parts = mutableListOf<String>()
-                        var firstUri: String? = null
-                        var failedFile = false
-                        for (index in 0 until minOf(clip.itemCount, 8)) {
-                            val item = clip.getItemAt(index)
-                            val uri = item.uri ?: item.intent?.data
-                            if (uri != null) {
-                                try {
-                                    val draft = importedText(applicationContext, uri)
-                                    parts += draft.text
-                                    if (firstUri == null) firstUri = uri.toString()
-                                } catch (_: Exception) { failedFile = true }
-                            } else {
-                                val text = item.text?.toString() ?: item.intent
-                                    ?.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString() ?: item.htmlText?.let {
-                                    android.text.Html.fromHtml(it, android.text.Html.FROM_HTML_MODE_COMPACT).toString()
-                                }
-                                if (!text.isNullOrBlank()) parts += text
-                            }
-                        }
-                        try {
-                            if (failedFile) intake.failure(
-                                "A dropped file wasn't readable. Use Share → Cue for that file.")
-                            if (parts.isNotEmpty()) intake.accept(parts.joinToString("\n").take(4000),
-                                "drop", if (parts.size > 1) "Dropped selection" else "Floating Cue", firstUri)
-                            else if (!failedFile) intake.failure(
-                                "This app didn't provide readable data. Try Share → Cue.")
-                        } catch (e: Exception) {
-                            intake.failure(e.message ?: "Try sharing this item with Cue instead.")
-                        }
-                    }
+                    val clip = event.clipData ?: return@setOnDragListener false
+                    captureClip(clip, "drop")
                     handler.postDelayed({ (view as TextView).text = "cue" }, 1300)
                     true
                 }
@@ -289,7 +277,8 @@ class FloatingCueService : Service() {
             else if (expanded && rightEdge) width - size else 0
         if (!(expanded && quickEntry)) frame.addView(bubble, FrameLayout.LayoutParams(size, size).apply {
             leftMargin = bubbleX
-            topMargin = if (expanded) (height - size) / 2 else 0
+            topMargin = if (expanded && pasteEntry) dp(5)
+                else if (expanded) (height - size) / 2 else 0
         })
         bubble.setOnTouchListener(object : View.OnTouchListener {
             var downX = 0f
@@ -297,6 +286,8 @@ class FloatingCueService : Service() {
             var startX = 0
             var startY = 0
             var dragged = false
+            var longPressed = false
+            var hold: Runnable? = null
             override fun onTouch(view: View, event: MotionEvent): Boolean {
                 if (locked()) return true
                 when (event.actionMasked) {
@@ -304,32 +295,62 @@ class FloatingCueService : Service() {
                         downX = event.rawX; downY = event.rawY
                         startX = windowParams.x; startY = windowParams.y
                         dragged = false
+                        longPressed = false
+                        hold = Runnable {
+                            if (!dragged && !expanded && !locked()) {
+                                longPressed = true
+                                pasteEntry = true
+                                expanded = true
+                                showWindow()
+                            }
+                        }.also { handler.postDelayed(it, 550) }
                         return true
                     }
                     MotionEvent.ACTION_MOVE -> {
-                        if (abs(event.rawX - downX) > dp(8) || abs(event.rawY - downY) > dp(8))
+                        if (abs(event.rawX - downX) > dp(8) || abs(event.rawY - downY) > dp(8)) {
                             dragged = true
+                            hold?.let(handler::removeCallbacks)
+                        }
                         if (dragged && !expanded) {
+                            showCloseTarget()
                             windowParams.x = (startX + (event.rawX - downX).toInt())
                                 .coerceIn(-hidden, screenWidth - size + hidden)
                             windowParams.y = (startY + (event.rawY - downY).toInt())
                                 .coerceIn(dp(28), screenHeight - size - dp(48))
                             windows.updateViewLayout(frame, windowParams)
+                            closeTarget?.alpha = if (windowParams.y + size / 2 >= screenHeight - dp(130)) 1f else .65f
                         }
                         return true
                     }
                     MotionEvent.ACTION_UP -> {
+                        hold?.let(handler::removeCallbacks)
                         if (dragged) {
                             if (!expanded) {
+                                if (windowParams.y + size / 2 >= screenHeight - dp(130)) {
+                                    hideCloseTarget()
+                                    view.animate().scaleX(.2f).scaleY(.2f).alpha(0f)
+                                        .setDuration(180).withEndAction {
+                                            captureScope.launch {
+                                                ThemeStore(applicationContext).setFloatingCue(false)
+                                                handler.post { stopSelf() }
+                                            }
+                                        }.start()
+                                    return true
+                                }
+                                hideCloseTarget()
                                 rightEdge = windowParams.x + size / 2 > screenWidth / 2
                                 centerY = windowParams.y + size / 2
                                 persistState()
                                 showWindow()
                             }
-                        } else view.performClick()
+                        } else if (!longPressed) view.performClick()
                         return true
                     }
-                    MotionEvent.ACTION_CANCEL -> return true
+                    MotionEvent.ACTION_CANCEL -> {
+                        hold?.let(handler::removeCallbacks)
+                        hideCloseTarget()
+                        return true
+                    }
                 }
                 return false
             }
@@ -378,6 +399,104 @@ class FloatingCueService : Service() {
                 leftMargin = cx + (radius * cos(angle)).toInt() - diameter / 2
                 topMargin = cy + (radius * sin(angle)).toInt() - diameter / 2
             })
+        }
+    }
+
+    private fun showCloseTarget() {
+        if (closeTarget != null) return
+        val target = TextView(this).apply {
+            text = "×  Release to close"
+            textSize = 16f
+            gravity = Gravity.CENTER
+            setTextColor(onAccent)
+            background = GradientDrawable().apply {
+                setColor(accent); cornerRadius = dp(28).toFloat()
+            }
+            alpha = .65f
+        }
+        val params = WindowManager.LayoutParams(dp(184), dp(56),
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+            PixelFormat.TRANSLUCENT).apply {
+            gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+            y = dp(46)
+        }
+        runCatching { windows.addView(target, params); closeTarget = target }
+    }
+
+    private fun hideCloseTarget() {
+        closeTarget?.let { runCatching { windows.removeViewImmediate(it) } }
+        closeTarget = null
+    }
+
+    private fun addPasteOption(frame: FrameLayout) {
+        val paste = TextView(this).apply {
+            text = "▣  Paste"
+            contentDescription = "Paste copied text, image or document into Cue"
+            textSize = 16f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setTextColor(onSurface)
+            background = GradientDrawable().apply {
+                setColor(surface); cornerRadius = dp(20).toFloat()
+                setStroke(dp(1), accent)
+            }
+            setOnClickListener {
+                if (locked()) return@setOnClickListener
+                val clip = getSystemService(ClipboardManager::class.java).primaryClip
+                if (clip == null || clip.itemCount == 0)
+                    CaptureIntake(applicationContext).failure("Clipboard is empty or unavailable. Copy an item first.")
+                else captureClip(clip, "paste") {
+                    pasteEntry = false
+                    expanded = false
+                    showWindow()
+                }
+                if (clip == null || clip.itemCount == 0) {
+                    pasteEntry = false; expanded = false; showWindow()
+                }
+            }
+        }
+        frame.addView(paste, FrameLayout.LayoutParams(menuWidth - dp(20), dp(48)).apply {
+            leftMargin = dp(10); topMargin = dp(78)
+        })
+    }
+
+    private fun captureClip(clip: ClipData, type: String, onFinished: (() -> Unit)? = null) {
+        val items = (0 until minOf(clip.itemCount, 8)).map(clip::getItemAt)
+        captureScope.launch {
+            val parts = mutableListOf<String>()
+            var firstUri: String? = null
+            var blockedFiles = 0
+            for (item in items) {
+                val uri = item.uri ?: item.intent?.data
+                if (uri != null) {
+                    try {
+                        val draft = importedText(applicationContext, uri)
+                        parts += draft.text
+                        if (firstUri == null) firstUri = uri.toString()
+                    } catch (_: Exception) { blockedFiles++ }
+                } else {
+                    val value = item.text?.toString() ?: item.intent
+                        ?.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString() ?: item.htmlText?.let {
+                        android.text.Html.fromHtml(it, android.text.Html.FROM_HTML_MODE_COMPACT).toString()
+                    }
+                    if (!value.isNullOrBlank()) parts += value
+                }
+            }
+            val intake = CaptureIntake(applicationContext)
+            try {
+                if (parts.isNotEmpty()) intake.accept(parts.joinToString("\n").take(4000), type,
+                    if (type == "paste") "Floating Cue paste" else "Floating Cue drop", firstUri)
+                if (blockedFiles > 0) intake.failure(
+                    "$blockedFiles file(s) could not be read from this app. Use Share → Cue for those files.")
+                else if (parts.isEmpty()) intake.failure(
+                    "No readable item was provided. Copy it, then hold Cue and tap Paste, or use Share → Cue.")
+            } catch (e: Exception) {
+                intake.failure(e.message ?: "Could not analyze this item.")
+            } finally {
+                if (onFinished != null) handler.post(onFinished)
+            }
         }
     }
 

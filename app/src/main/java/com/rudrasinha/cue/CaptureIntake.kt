@@ -17,6 +17,7 @@ import com.rudrasinha.cue.data.CueDatabase
 import com.rudrasinha.cue.data.ReminderMatch
 import com.rudrasinha.cue.reminders.ReminderScheduler
 import com.rudrasinha.cue.settings.ThemeStore
+import com.rudrasinha.cue.assistant.UsagePatternStore
 import kotlinx.coroutines.flow.first
 import java.security.MessageDigest
 import java.time.Instant
@@ -46,12 +47,16 @@ class CaptureIntake(private val context: Context) {
         }.getOrNull()
         val title = candidate?.title ?: content.lineSequence()
             .firstOrNull { it.isNotBlank() }?.trim()?.take(100) ?: "New reminder"
-        // An explicit bubble entry or drop is a reminder even when no time can be inferred.
-        if (candidate == null && (type == "bubble" || type == "drop") &&
+        // An explicit typed bubble entry is a reminder even without a time. A drop may be unrelated.
+        if (candidate == null && type == "bubble" &&
             content.length <= 250 && content.lineSequence().count() <= 5) {
             val ownerId = ReminderScheduler(context).activeOwnerId() ?: "guest"
             val database = CueDatabase.get(context)
-            val tone = ThemeStore(context).reminderTone.first()
+            val settings = ThemeStore(context)
+            val tone = settings.reminderTone.first()
+            val patterns = UsagePatternStore(context)
+            val routine = if (settings.usageLearningEnabled.first() && patterns.hasAccess())
+                patterns.nextRoutineTime(ownerId) else null
             val scheduler = ReminderScheduler(context)
             val actions = CommitmentActions(database, scheduler,
                 CloudCommitments(database, CueAuth(context).client, scheduler))
@@ -59,12 +64,15 @@ class CaptureIntake(private val context: Context) {
             val result = saveLock.withLock {
                 if (database.history().sourceByOrigin(ownerId, type, key) != null) "Already saved"
                 else {
-                    actions.save(ownerId, null, title, content.take(2000), null,
+                    actions.save(ownerId, null, title, content.take(2000), routine,
                         CaptureOrigin(type, titleHint ?: "Floating Cue", content.take(2000), uri, key), tone)
                     "Reminder set"
                 }
             }
-            acknowledge(result, "$title · No alert set")
+            val whenText = routine?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault())
+                .format(DateTimeFormatter.ofPattern("d MMM · h:mm a")) }
+            acknowledge(result, if (whenText == null) "$title · No alert set"
+                else "$title · Routine-based alert $whenText")
             return true
         }
         if (candidate == null) {

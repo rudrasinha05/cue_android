@@ -34,6 +34,7 @@ class ThemeStore(private val context: Context) {
     private val sizeKey = intPreferencesKey("floating_size_dp")
     private val dayPlanKey = booleanPreferencesKey("daily_plan_enabled")
     private val notificationIntelligenceKey = booleanPreferencesKey("notification_intelligence_enabled")
+    private val usageLearningKey = booleanPreferencesKey("usage_learning_enabled")
     private val wakeKey = intPreferencesKey("wake_minute")
     private val bedKey = intPreferencesKey("bed_minute")
     private val reminderToneKey = stringPreferencesKey("reminder_tone")
@@ -54,6 +55,9 @@ class ThemeStore(private val context: Context) {
     val dailyPlanEnabled: Flow<Boolean> = context.cuePreferences.data.map { it[dayPlanKey] ?: false }
     val notificationIntelligence: Flow<Boolean> = context.cuePreferences.data.map {
         it[notificationIntelligenceKey] ?: false
+    }
+    val usageLearningEnabled: Flow<Boolean> = context.cuePreferences.data.map {
+        it[usageLearningKey] ?: false
     }
     val wakeMinute: Flow<Int> = context.cuePreferences.data.map { (it[wakeKey] ?: 420).coerceIn(0, 1080) }
     val bedMinute: Flow<Int> = context.cuePreferences.data.map { (it[bedKey] ?: 1320).coerceIn(480, 1439) }
@@ -99,6 +103,10 @@ class ThemeStore(private val context: Context) {
 
     suspend fun setNotificationIntelligence(enabled: Boolean) {
         context.cuePreferences.edit { it[notificationIntelligenceKey] = enabled }
+    }
+
+    suspend fun setUsageLearning(enabled: Boolean) {
+        context.cuePreferences.edit { it[usageLearningKey] = enabled }
     }
 
     suspend fun setDayHours(wake: Int, bed: Int) {

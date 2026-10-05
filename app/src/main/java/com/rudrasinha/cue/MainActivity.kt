@@ -88,6 +88,7 @@ import com.rudrasinha.cue.assistant.CueAction
 import com.rudrasinha.cue.assistant.FloatingCueService
 import com.rudrasinha.cue.assistant.ScreenInsightService
 import com.rudrasinha.cue.assistant.CueNotificationListener
+import com.rudrasinha.cue.assistant.UsagePatternStore
 import com.rudrasinha.cue.data.CommitmentActions
 import com.rudrasinha.cue.data.CueDatabase
 import com.rudrasinha.cue.data.CloudCommitments
@@ -234,6 +235,7 @@ private fun CueApp(
     val screenRunning by ScreenInsightService.running.collectAsState()
     val dailyPlanEnabled by themeStore.dailyPlanEnabled.collectAsState(initial = false)
     val notificationIntelligence by themeStore.notificationIntelligence.collectAsState(initial = false)
+    val usageLearning by themeStore.usageLearningEnabled.collectAsState(initial = false)
     val cloudAnalysisOwner by themeStore.cloudAnalysisOwner.collectAsState(initial = null)
     val wakeMinute by themeStore.wakeMinute.collectAsState(initial = 420)
     val bedMinute by themeStore.bedMinute.collectAsState(initial = 1320)
@@ -260,12 +262,26 @@ private fun CueApp(
     val batches by remember(ownerId) { database.history().observeBatches(ownerId) }.collectAsState(initial = emptyList())
     val scheduler = remember { ReminderScheduler(activity.applicationContext) }
     val actions = remember { CommitmentActions(database, scheduler, cloud) }
+    val usagePatterns = remember { UsagePatternStore(activity.applicationContext) }
     val scope = rememberCoroutineScope()
     var selected by rememberSaveable { mutableStateOf(Tab.TODAY) }
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
     var todayFocusToken by remember { mutableIntStateOf(0) }
     var actionSheetOpen by remember { mutableStateOf(false) }
     var dayPlanOpen by remember { mutableStateOf(false) }
+    var pendingUsageAccess by remember { mutableStateOf(false) }
+    var usageProfileEpoch by remember { mutableIntStateOf(0) }
+    LaunchedEffect(permissionEpoch, pendingUsageAccess) {
+        if (pendingUsageAccess && permissionEpoch > 0 && usagePatterns.hasAccess()) {
+            pendingUsageAccess = false
+            themeStore.setUsageLearning(true)
+            withContext(Dispatchers.IO) { usagePatterns.capture(ownerId) }
+            usageProfileEpoch++
+        }
+    }
+    LaunchedEffect(permissionEpoch, usageLearning) {
+        if (usageLearning && !usagePatterns.hasAccess()) themeStore.setUsageLearning(false)
+    }
     var controlMessage by remember { mutableStateOf<String?>(null) }
     var pendingOverlayEnable by remember { mutableStateOf(false) }
     var pendingFloatingEnable by remember { mutableStateOf(false) }
@@ -721,6 +737,8 @@ private fun CueApp(
                                 themeStore.setFloatingCue(false)
                                 themeStore.setNotificationIntelligence(false)
                                 themeStore.setDailyPlanEnabled(false)
+                                themeStore.setUsageLearning(false)
+                                usagePatterns.clear(ownerId)
                                 AccountData(database, scheduler, cloud).delete(ownerId)
                                 accountMessage = "Your Cue reminders and history were deleted."
                             } catch (e: Exception) {
@@ -738,6 +756,8 @@ private fun CueApp(
                                 activity.stopService(Intent(activity, ScreenInsightService::class.java))
                                 themeStore.setFloatingCue(false)
                                 themeStore.setCloudAnalysisOwner(null)
+                                themeStore.setUsageLearning(false)
+                                usagePatterns.clear(userId)
                                 AccountData(database, scheduler, cloud).deleteLocal(userId)
                                 cloud.clearAccountCache(userId)
                                 scheduler.setActiveOwner(null)
@@ -856,6 +876,25 @@ private fun CueApp(
                     },
                     cloudAnalysisOwner == userId && userId != null,
                     { enable -> scope.launch { themeStore.setCloudAnalysisOwner(if (enable) userId else null) } },
+                    usageLearning, remember(ownerId, usageProfileEpoch, permissionEpoch) {
+                        usagePatterns.summary(ownerId)
+                    },
+                    { enable ->
+                        if (!enable) scope.launch { themeStore.setUsageLearning(false) }
+                        else if (usagePatterns.hasAccess()) scope.launch {
+                            themeStore.setUsageLearning(true)
+                            withContext(Dispatchers.IO) { usagePatterns.capture(ownerId) }
+                            usageProfileEpoch++
+                        } else {
+                            pendingUsageAccess = true
+                            activity.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                        }
+                    },
+                    { scope.launch {
+                        themeStore.setUsageLearning(false)
+                        usagePatterns.clear(ownerId)
+                        usageProfileEpoch++
+                    } },
                     calendarBusy,
                     {
                         if (activity.checkSelfPermission(Manifest.permission.READ_CALENDAR) ==
@@ -1054,6 +1093,10 @@ private fun YouScreen(
     onNotificationIntelligence: (Boolean) -> Unit,
     cloudAnalysisEnabled: Boolean,
     onCloudAnalysis: (Boolean) -> Unit,
+    usageLearning: Boolean,
+    usageSummary: String,
+    onUsageLearning: (Boolean) -> Unit,
+    onClearUsage: () -> Unit,
     calendarBusy: Boolean,
     onImportGoogleCalendar: () -> Unit,
     onImportMail: () -> Unit,
@@ -1174,6 +1217,32 @@ private fun YouScreen(
         }
         Spacer(Modifier.height(8.dp))
         TextButton(onClick = onImportMail) { Text("Paste a Gmail message") }
+        Spacer(Modifier.height(24.dp))
+        Text("Your routine", style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(8.dp))
+        Card(shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+            Column(Modifier.fillMaxWidth().padding(18.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Learn active hours", fontWeight = FontWeight.SemiBold)
+                        Text("Optional Android Usage Access. Cue keeps only small hourly and app-count totals on this device, not a screen recording or raw timeline.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(checked = usageLearning, onCheckedChange = onUsageLearning)
+                }
+                if (usageLearning) {
+                    Text(usageSummary, style = MaterialTheme.typography.bodySmall)
+                    Text("After enough samples, undated reminders typed in the bubble can use an active hour. Explicit deadlines are never moved.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    TextButton(onClick = onClearUsage) { Text("Clear learned routine") }
+                }
+            }
+        }
         Spacer(Modifier.height(20.dp))
         }
         if (settingsOpen) {
