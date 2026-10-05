@@ -100,6 +100,7 @@ class CaptureIntake(private val context: Context) {
     }
 
     fun failure(message: String) = acknowledge("Cue couldn't read that item", message)
+    fun noScreenReminder() = acknowledge("No clear reminder found", "Nothing was added from this screen.")
 
     private fun fingerprint(value: String): String = MessageDigest.getInstance("SHA-256")
         .digest(value.trim().lowercase().toByteArray(Charsets.UTF_8))

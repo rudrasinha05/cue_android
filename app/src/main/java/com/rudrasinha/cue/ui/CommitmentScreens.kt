@@ -1,5 +1,10 @@
 package com.rudrasinha.cue.ui
 
+import android.content.Intent
+import android.net.Uri
+import android.provider.OpenableColumns
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -25,6 +30,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
@@ -32,6 +38,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.rudrasinha.cue.data.CommitmentEntity
 import com.rudrasinha.cue.data.CaptureOrigin
+import com.rudrasinha.cue.data.SourceEntity
 import com.rudrasinha.cue.reminders.ReminderTones
 import com.rudrasinha.cue.reminders.ChainSchedule
 import java.time.Instant
@@ -79,7 +86,8 @@ fun CommitmentListScreen(
     active: List<CommitmentEntity>, completed: List<CommitmentEntity>, upcoming: Boolean,
     message: String?, exactAvailable: Boolean, notificationsAllowed: Boolean,
     onExactAccess: () -> Unit, onNotificationAccess: () -> Unit,
-    defaultTone: String, onSave: suspend (String?, String, String?, Long?, CaptureOrigin, String) -> Unit,
+    defaultTone: String, onSave: suspend (String?, String, String?, Long?, CaptureOrigin, String, CaptureOrigin?) -> Unit,
+    attachments: List<SourceEntity>,
     onComplete: (String) -> Unit, onSnooze: (String) -> Unit,
     onFollowUp: (String, Long) -> Unit, onChain: (String, List<Long>?) -> Unit,
     onArchive: (String) -> Unit,
@@ -340,6 +348,10 @@ fun CommitmentListScreen(
                             sectionItems.forEach { item ->
                                 key(item.id) {
                                     ReminderCard(item, now, isCompleted,
+                                        dayNumber = if (!isCompleted && dateOf(item) == today)
+                                            visibleItems.filter { dateOf(it) == today }.indexOf(item) + 1
+                                        else null,
+                                        attachments = attachments.filter { it.commitmentId == item.id && it.originType == "attachment" },
                                         onEdit = { openEditor(item) },
                                         onComplete = { onComplete(item.id) },
                                         onSnooze = { onSnooze(item.id) },
@@ -374,8 +386,8 @@ fun CommitmentListScreen(
 
     if (editorOpen) key(draftId) { ReminderEditor(editing, draftTitle, draftDetails, draftDue, draftId,
         if (upcoming) selectedDate else today, defaultTone,
-        onDismiss = { editorOpen = false; if (externalDraft != null) onCaptureDismiss() }) { title, details, due, tone ->
-        onSave(editing?.id, title, details, due, draftOrigin, tone)
+        onDismiss = { editorOpen = false; if (externalDraft != null) onCaptureDismiss() }) { title, details, due, tone, attachment ->
+        onSave(editing?.id, title, details, due, draftOrigin, tone, attachment)
         editorOpen = false
         query = ""
         searchOpen = false
@@ -450,11 +462,14 @@ private fun Notice(text: String, actionLabel: String, onAction: () -> Unit) {
 
 @Composable
 private fun ReminderCard(item: CommitmentEntity, now: Long, completed: Boolean,
+    dayNumber: Int?,
+    attachments: List<SourceEntity>,
     onEdit: () -> Unit, onComplete: () -> Unit, onSnooze: () -> Unit,
     onFollowUp: (Long) -> Unit, onChain: (List<Long>?) -> Unit,
     onArchive: () -> Unit, onDelete: () -> Unit) {
     var menuOpen by remember { mutableStateOf(false) }
     var deletePrompt by remember(item.id) { mutableStateOf(false) }
+    val context = LocalContext.current
     val accent = when {
         completed -> aqua
         item.dueAtMillis == null -> violet
@@ -478,12 +493,27 @@ private fun ReminderCard(item: CommitmentEntity, now: Long, completed: Boolean,
             }
             Column(Modifier.weight(1f).padding(start = 14.dp)
                 .clickable(enabled = !completed, onClick = onEdit)) {
+                if (dayNumber != null && dayNumber > 0) Text("TODAY · $dayNumber",
+                    color = accent, style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold)
                 Text(item.title, color = ivory, style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 item.details?.takeIf { it.isNotBlank() }?.let {
                     Spacer(Modifier.height(4.dp))
                     Text(it, color = muted, style = MaterialTheme.typography.bodySmall,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                attachments.forEach { file ->
+                    Text("▣  ${file.title ?: "Attachment"}", color = sky,
+                        style = MaterialTheme.typography.labelSmall, maxLines = 1,
+                        modifier = Modifier.clickable {
+                            file.originalUri?.let { uri -> runCatching {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(uri)).apply {
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    type = context.contentResolver.getType(Uri.parse(uri)) ?: "*/*"
+                                })
+                            } }
+                        })
                 }
                 Spacer(Modifier.height(9.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -621,7 +651,20 @@ private fun CalendarGrid(month: YearMonth, selectedDate: LocalDate,
 private fun ReminderEditor(item: CommitmentEntity?, suggestedTitle: String, suggestedDetails: String,
     suggestedDue: Long?,
     draftId: String, initialDate: LocalDate, defaultTone: String,
-    onDismiss: () -> Unit, onSave: suspend (String, String?, Long?, String) -> Unit) {
+    onDismiss: () -> Unit, onSave: suspend (String, String?, Long?, String, CaptureOrigin?) -> Unit) {
+    val context = LocalContext.current
+    var attachment by remember(item?.id, draftId) { mutableStateOf<CaptureOrigin?>(null) }
+    val attachmentPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching { context.contentResolver.takePersistableUriPermission(uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            val name = runCatching {
+                context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                    ?.use { if (it.moveToFirst()) it.getString(0) else null }
+            }.getOrNull() ?: uri.lastPathSegment ?: "File"
+            attachment = CaptureOrigin("attachment", name, uri = uri.toString(), key = uri.toString())
+        }
+    }
     val initialDue = (item?.dueAtMillis ?: suggestedDue)?.let {
         Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault())
     }
@@ -698,6 +741,18 @@ private fun ReminderEditor(item: CommitmentEntity?, suggestedTitle: String, sugg
                             Icon(Icons.Filled.Add, null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(5.dp))
                             Text("Add a note")
+                        }
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+                Surface(shape = RoundedCornerShape(22.dp), color = colors.surface,
+                    border = BorderStroke(1.dp, colors.outlineVariant)) {
+                    Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                        Text("Image or document", style = MaterialTheme.typography.titleMedium)
+                        Text(attachment?.title ?: "Keep a file with this reminder",
+                            style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+                        TextButton(onClick = { attachmentPicker.launch(arrayOf("*/*")) }) {
+                            Text(if (attachment == null) "Add file" else "Change file")
                         }
                     }
                 }
@@ -801,7 +856,7 @@ private fun ReminderEditor(item: CommitmentEntity?, suggestedTitle: String, sugg
                     Button(onClick = {
                         if (!saving) scope.launch {
                             saving = true; saveError = null
-                            try { onSave(title.trim(), details.trim().ifBlank { null }, due, tone) }
+                            try { onSave(title.trim(), details.trim().ifBlank { null }, due, tone, attachment) }
                             catch (e: Exception) {
                                 saveError = e.message ?: "Could not save. Please try again."
                             } finally { saving = false }
@@ -820,10 +875,10 @@ private fun ReminderEditor(item: CommitmentEntity?, suggestedTitle: String, sugg
         onDismiss = { toneDialog = false })
     if (dateDialog) AlertDialog(onDismissRequest = { dateDialog = false },
         title = { Text("Choose a date") },
-        text = { CalendarGrid(month, date, emptyMap(),
+        text = { Column(Modifier.fillMaxWidth()) { CalendarGrid(month, date, emptyMap(),
             onPrevious = { month = month.minusMonths(1) },
             onNext = { month = month.plusMonths(1) },
-            onDate = { date = it; dateDialog = false }, earliest = LocalDate.now()) },
+            onDate = { date = it; dateDialog = false }, earliest = LocalDate.now()) } },
         confirmButton = { TextButton(onClick = { dateDialog = false }) { Text("Done") } })
     if (timeDialog) {
         var mode by remember { mutableStateOf("input") }

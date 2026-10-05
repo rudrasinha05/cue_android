@@ -24,7 +24,8 @@ class CommitmentActions(
     private val dao get() = database.commitments()
 
     suspend fun save(ownerId: String, id: String?, title: String, details: String?, dueAt: Long?,
-        origin: CaptureOrigin = CaptureOrigin("manual"), toneId: String = ReminderTones.DEFAULT): Boolean {
+        origin: CaptureOrigin = CaptureOrigin("manual"), toneId: String = ReminderTones.DEFAULT,
+        attachment: CaptureOrigin? = null): Boolean {
         require(title.isNotBlank()) { "Add a title." }
         require(dueAt == null || dueAt > System.currentTimeMillis()) { "Choose a future time." }
         val old = id?.let { dao.byId(it) }
@@ -48,6 +49,13 @@ class CommitmentActions(
                 title = origin.title, excerpt = origin.excerpt?.take(2000),
                 originalUri = origin.uri, capturedAtMillis = now, dirty = ownerId != "guest"
             ))
+            if (attachment != null && database.history().sourceByOrigin(ownerId,
+                    attachment.type, attachment.key ?: attachment.uri.orEmpty()) == null)
+                database.history().insertSource(SourceEntity(
+                    id = UUID.randomUUID().toString(), ownerId = ownerId, commitmentId = item.id,
+                    originType = attachment.type, originKey = attachment.key ?: attachment.uri,
+                    title = attachment.title, excerpt = null, originalUri = attachment.uri,
+                    capturedAtMillis = now, dirty = ownerId != "guest"))
             database.history().insertEvent(event(item, if (old == null) "created" else "updated"))
         }
         if (old != null) { scheduler.cancel(old); scheduler.silence(old) }

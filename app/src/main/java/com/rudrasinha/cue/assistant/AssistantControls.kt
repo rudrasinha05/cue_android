@@ -16,6 +16,7 @@ enum class CueAction(val key: String, val label: String, val symbol: String) {
     VOICE("voice", "Voice Reminder", "◉"),
     QUICK("quick", "Quick Reminder", "+"),
     IMPORT("import", "Import / Scan", "▤"),
+    SCREEN("screen_once", "Scan this screen", "◎"),
     DAY("day", "My Day", "▦"),
     SETTINGS("settings", "Assistant Settings", "⚙");
 

@@ -56,6 +56,9 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTimePickerState
@@ -296,6 +299,9 @@ private fun CueApp(
             catch (e: Exception) { reminderMessage = e.message ?: "Could not process your voice note." }
         } else if (result.resultCode == Activity.RESULT_OK) reminderMessage = "No speech was captured. Try again."
     }
+    var timetableDraft by remember { mutableStateOf<CaptureDraft?>(null) }
+    var facultyCodes by remember { mutableStateOf("") }
+    var timetableSaving by remember { mutableStateOf(false) }
     val documentLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) scope.launch {
             try {
@@ -304,13 +310,18 @@ private fun CueApp(
                     Intent.FLAG_GRANT_READ_URI_PERMISSION) }
                 val draft = withContext(Dispatchers.IO) { importedText(activity, uri) }
                 reminderMessage = null
-                CaptureIntake(activity.applicationContext).accept(draft.text,
+                val filename = draft.origin.title.orEmpty()
+                if (filename.endsWith(".xlsx", true) || filename.endsWith(".csv", true) ||
+                    filename.endsWith(".tsv", true)) {
+                    timetableDraft = draft
+                } else CaptureIntake(activity.applicationContext).accept(draft.text,
                     draft.origin.type, draft.origin.title, draft.origin.uri)
             } catch (e: Exception) {
                 reminderMessage = e.message ?: "Could not read that document."
             }
         }
     }
+    var scanOncePending by remember { mutableStateOf(false) }
     val projectionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == Activity.RESULT_OK && result.data != null) {
@@ -318,12 +329,15 @@ private fun CueApp(
                 activity.startForegroundService(Intent(activity, ScreenInsightService::class.java).apply {
                     putExtra(ScreenInsightService.EXTRA_RESULT, result.resultCode)
                     putExtra(ScreenInsightService.EXTRA_CONSENT, result.data)
+                    putExtra(ScreenInsightService.EXTRA_ONCE, scanOncePending)
                 })
-                controlMessage = "Analyzing the screen you shared. Stop from Cue or the notification."
+                if (scanOncePending) activity.moveTaskToBack(true)
+                else controlMessage = "Analyzing the screen you shared. Stop from Cue or the notification."
             } catch (e: RuntimeException) {
                 controlMessage = e.message ?: "Could not start screen analysis."
             }
         }
+        scanOncePending = false
     }
     fun channelNotificationsEnabled(id: String): Boolean {
         val manager = activity.getSystemService(NotificationManager::class.java)
@@ -440,6 +454,13 @@ private fun CueApp(
                 "image/png", "image/webp",
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+            CueAction.SCREEN -> {
+                if (Build.VERSION.SDK_INT >= 34) {
+                    scanOncePending = true
+                    projectionLauncher.launch(activity.getSystemService(MediaProjectionManager::class.java)
+                        .createScreenCaptureIntent())
+                } else controlMessage = "Scan this screen needs Android 14 or newer."
+            }
             CueAction.DAY -> { selected = Tab.TODAY; todayFocusToken++; dayPlanOpen = true }
             CueAction.SETTINGS -> { selected = Tab.YOU; settingsOpen = true }
         }
@@ -554,8 +575,8 @@ private fun CueApp(
                         })
                     },
                     reminderTone,
-                    { id, title, details, due, origin, tone ->
-                        val synced = actions.save(ownerId, id, title, details, due, origin, tone)
+                    { id, title, details, due, origin, tone, attachment ->
+                        val synced = actions.save(ownerId, id, title, details, due, origin, tone, attachment)
                         reminderMessage = if (synced) "Reminder saved."
                             else "Saved on this device; account sync is pending."
                         if (due != null && Build.VERSION.SDK_INT >= 33 &&
@@ -563,6 +584,7 @@ private fun CueApp(
                             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
                         }
                     },
+                    sources,
                     { id -> perform("Marked done.") { actions.complete(ownerId, id) } },
                     { id -> perform("Reminder moved 10 minutes ahead.") { actions.snooze(ownerId, id) } },
                     { id, days -> perform("Follow-up scheduled.") { actions.followUp(ownerId, id, days) } },
@@ -817,6 +839,44 @@ private fun CueApp(
             dispatchShortcut(action)
         }
         if (dayPlanOpen) DailyPlanSheet(items, wakeMinute, bedMinute) { dayPlanOpen = false }
+        timetableDraft?.let { draft ->
+            val matches = ProfessorTimetable.matches(draft.text, facultyCodes)
+            AlertDialog(onDismissRequest = { if (!timetableSaving) timetableDraft = null },
+                title = { Text("Your lecture timetable") },
+                text = { Column {
+                    Text("Enter your faculty abbreviation exactly as it appears in the file. Separate multiple codes with commas. Cue will use only matching rows with a weekday and start time.")
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(facultyCodes, onValueChange = { facultyCodes = it },
+                        label = { Text("My code, e.g. RS") }, singleLine = true)
+                    Spacer(Modifier.height(12.dp))
+                    Text(if (matches.isEmpty()) "No matching lecture rows found. Check the code and file layout. Nothing will be added."
+                        else "${matches.size} matching slots · up to four upcoming dates per slot")
+                    matches.take(6).forEach { Text("${it.day.name.lowercase().replaceFirstChar(Char::uppercase)} · ${it.start} · ${it.title}") }
+                } },
+                confirmButton = { TextButton(enabled = matches.isNotEmpty() && !timetableSaving,
+                    onClick = { scope.launch {
+                        timetableSaving = true
+                        try {
+                            var added = 0
+                            matches.forEach { lecture ->
+                                ProfessorTimetable.nextFourWeeks(lecture).forEach { due ->
+                                    val key = "timetable:${draft.origin.uri}:${lecture.day}:${lecture.start}:${lecture.title}:$due"
+                                    if (database.history().sourceByOrigin(ownerId, "timetable", key) == null) {
+                                        actions.save(ownerId, null, lecture.title, lecture.row, due,
+                                            CaptureOrigin("timetable", draft.origin.title, lecture.row,
+                                                draft.origin.uri, key), reminderTone)
+                                        added++
+                                    }
+                                }
+                            }
+                            reminderMessage = "$added lecture reminders added for the next four weeks."
+                            timetableDraft = null
+                        } catch (e: Exception) {
+                            reminderMessage = e.message ?: "Could not import timetable."
+                        } finally { timetableSaving = false }
+                    } }) { Text(if (timetableSaving) "Adding…" else "Add my lectures") } },
+                dismissButton = { TextButton(onClick = { timetableDraft = null }) { Text("Cancel") } })
+        }
     }
 }
 

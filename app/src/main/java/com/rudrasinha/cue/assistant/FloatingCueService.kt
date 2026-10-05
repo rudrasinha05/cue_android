@@ -64,7 +64,7 @@ class FloatingCueService : Service() {
     private var onSurface = Color.WHITE
     private val size get() = dp(sizeDp)
     private val menuWidth get() = dp(260)
-    private val menuHeight get() = dp(if (quickEntry) 210 else 390)
+    private val menuHeight get() = dp(if (quickEntry) 210 else 430)
     private val hidden get() = dp(14)
     private val screenWidth get() = resources.displayMetrics.widthPixels
     private val screenHeight get() = resources.displayMetrics.heightPixels
@@ -340,8 +340,8 @@ class FloatingCueService : Service() {
     }
 
     private fun addActions(frame: FrameLayout) {
-        val offsets = intArrayOf(56, 78, 84, 78, 56)
-        val tops = intArrayOf(12, 76, 140, 204, 268)
+        val offsets = intArrayOf(56, 78, 84, 84, 78, 56)
+        val tops = intArrayOf(12, 73, 134, 195, 256, 317)
         CueAction.entries.forEachIndexed { index, action ->
             val chip = TextView(this).apply {
                 text = "${action.symbol}   ${action.label}"

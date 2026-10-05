@@ -43,6 +43,7 @@ class ScreenInsightService : Service() {
         const val ACTION_STOP = "com.rudrasinha.cue.STOP_SCREEN_ANALYSIS"
         const val EXTRA_CONSENT = "projection_consent"
         const val EXTRA_RESULT = "projection_result"
+        const val EXTRA_ONCE = "projection_once"
         val running = MutableStateFlow(false)
         private const val NOTIFICATION_ID = 2301
     }
@@ -55,6 +56,8 @@ class ScreenInsightService : Service() {
     private var display: VirtualDisplay? = null
     private var reader: ImageReader? = null
     private var lastSample = 0L
+    private var startedAt = 0L
+    private var oneShot = false
     private var lastCandidateFingerprint = ""
     @Volatile private var stopping = false
     private val callback = object : MediaProjection.Callback() {
@@ -77,6 +80,8 @@ class ScreenInsightService : Service() {
         if (consent == null || result != android.app.Activity.RESULT_OK) {
             stopSelf(); return START_NOT_STICKY
         }
+        oneShot = intent.getBooleanExtra(EXTRA_ONCE, false)
+        startedAt = SystemClock.elapsedRealtime()
         try {
             val notification = notice()
             startForeground(NOTIFICATION_ID, notification,
@@ -112,8 +117,8 @@ class ScreenInsightService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         return Notification.Builder(this, "cue_screen")
             .setSmallIcon(R.drawable.ic_cue_foreground)
-            .setContentTitle("Cue is analyzing your shared screen")
-            .setContentText("Local screen text analysis · tap Stop any time")
+            .setContentTitle(if (oneShot) "Cue is scanning this screen" else "Cue is analyzing your shared screen")
+            .setContentText(if (oneShot) "One scan, then screen sharing stops" else "Local screen text analysis · tap Stop any time")
             .setOngoing(true)
             .setContentIntent(AssistantControls.shortcutIntent(this, CueAction.SETTINGS.key).let {
                 PendingIntent.getActivity(this, 2303, it,
@@ -148,6 +153,7 @@ class ScreenInsightService : Service() {
         val image = runCatching { source.acquireLatestImage() }.getOrNull() ?: return
         val now = SystemClock.elapsedRealtime()
         if (getSystemService(KeyguardManager::class.java).isKeyguardLocked ||
+            (oneShot && now - startedAt < 1200) ||
             now - lastSample < 15_000 || !busy.compareAndSet(false, true)) {
             image.close(); return
         }
@@ -162,7 +168,11 @@ class ScreenInsightService : Service() {
             }
         } catch (_: RuntimeException) { null }
         finally { image.close() }
-        if (bitmap == null) { busy.set(false); return }
+        if (bitmap == null) {
+            busy.set(false)
+            if (oneShot) { CaptureIntake(applicationContext).failure("Could not capture this screen."); stopSelf() }
+            return
+        }
         work.launch {
             try {
                 val text = Tasks.await(recognizer.process(InputImage.fromBitmap(bitmap, 0)))
@@ -174,11 +184,17 @@ class ScreenInsightService : Service() {
                         .joinToString("") { "%02x".format(it) }
                     if (digest != lastCandidateFingerprint) {
                         lastCandidateFingerprint = digest
-                        CaptureIntake(applicationContext).accept(candidate, "screen", "Shared screen")
+                        val intake = CaptureIntake(applicationContext)
+                        if (!intake.accept(candidate, "screen", "Shared screen") && oneShot)
+                            intake.noScreenReminder()
                     }
-                }
-            } catch (_: Exception) { /* A later frame can still be analyzed. */ }
-            finally { bitmap.recycle(); busy.set(false) }
+                } else if (oneShot) CaptureIntake(applicationContext).noScreenReminder()
+            } catch (_: Exception) {
+                if (oneShot) CaptureIntake(applicationContext).failure("Could not read this screen. Try again.")
+            } finally {
+                bitmap.recycle(); busy.set(false)
+                if (oneShot) stopSelf()
+            }
         }
     }
 
