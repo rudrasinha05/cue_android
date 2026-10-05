@@ -270,19 +270,22 @@ private fun CueApp(
     var actionSheetOpen by remember { mutableStateOf(false) }
     var dayPlanOpen by remember { mutableStateOf(false) }
     var pendingUsageAccess by remember { mutableStateOf(false) }
+    var usageRequestEpoch by remember { mutableIntStateOf(-1) }
     var usageProfileEpoch by remember { mutableIntStateOf(0) }
+    var controlMessage by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(permissionEpoch, pendingUsageAccess) {
-        if (pendingUsageAccess && permissionEpoch > 0 && usagePatterns.hasAccess()) {
+        if (pendingUsageAccess && permissionEpoch > usageRequestEpoch) {
             pendingUsageAccess = false
-            themeStore.setUsageLearning(true)
-            withContext(Dispatchers.IO) { usagePatterns.capture(ownerId) }
-            usageProfileEpoch++
+            if (usagePatterns.hasAccess()) {
+                themeStore.setUsageLearning(true)
+                withContext(Dispatchers.IO) { usagePatterns.capture(ownerId) }
+                usageProfileEpoch++
+            } else controlMessage = "Usage Access was not enabled; routine learning remains off."
         }
     }
     LaunchedEffect(permissionEpoch, usageLearning) {
         if (usageLearning && !usagePatterns.hasAccess()) themeStore.setUsageLearning(false)
     }
-    var controlMessage by remember { mutableStateOf<String?>(null) }
     var pendingOverlayEnable by remember { mutableStateOf(false) }
     var pendingFloatingEnable by remember { mutableStateOf(false) }
     var pendingPanelEnable by remember { mutableStateOf(false) }
@@ -887,6 +890,7 @@ private fun CueApp(
                             usageProfileEpoch++
                         } else {
                             pendingUsageAccess = true
+                            usageRequestEpoch = permissionEpoch
                             activity.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
                         }
                     },
