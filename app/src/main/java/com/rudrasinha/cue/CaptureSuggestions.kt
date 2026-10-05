@@ -4,12 +4,12 @@ import java.time.Clock
 import java.time.LocalDate
 import java.util.Locale
 
-/** Only clear English date/time phrases are suggested; the user confirms in the editor. */
+/** Conservative local date/time parsing for explicit English and Hinglish phrases. */
 internal fun suggestedDue(text: String, clock: Clock = Clock.systemDefaultZone()): Long? {
     val normalized = text.lowercase(Locale.ROOT)
     val day = when {
-        Regex("\\btomorrow\\b").containsMatchIn(normalized) -> LocalDate.now(clock).plusDays(1)
-        Regex("\\btoday\\b").containsMatchIn(normalized) -> LocalDate.now(clock)
+        Regex("\\b(tomorrow|kal)\\b").containsMatchIn(normalized) -> LocalDate.now(clock).plusDays(1)
+        Regex("\\b(today|aaj)\\b").containsMatchIn(normalized) -> LocalDate.now(clock)
         else -> return null
     }
     val twelveHour = Regex("\\b(1[0-2]|0?[1-9])(?::([0-5]\\d))?\\s*(am|pm)\\b")
@@ -22,9 +22,22 @@ internal fun suggestedDue(text: String, clock: Clock = Clock.systemDefaultZone()
         minute = twelveHour.groupValues[2].toIntOrNull() ?: 0
     } else {
         val military = Regex("\\b([01]?\\d|2[0-3]):([0-5]\\d)\\b").find(normalized)
-            ?: return null
-        hour = military.groupValues[1].toInt()
-        minute = military.groupValues[2].toInt()
+        if (military != null) {
+            hour = military.groupValues[1].toInt()
+            minute = military.groupValues[2].toInt()
+        } else {
+            val spoken = Regex("\\b(1[0-2]|0?[1-9])(?::([0-5]\\d))?\\s*baje\\b").find(normalized)
+                ?: return null
+            val spokenHour = spoken.groupValues[1].toInt()
+            hour = when {
+                Regex("\\bsubah\\b").containsMatchIn(normalized) && spokenHour in 1..11 -> spokenHour
+                Regex("\\bdopahar\\b").containsMatchIn(normalized) && spokenHour in 1..4 -> spokenHour + 12
+                Regex("\\b(shaam|sham)\\b").containsMatchIn(normalized) && spokenHour in 4..11 -> spokenHour + 12
+                Regex("\\braat\\b").containsMatchIn(normalized) && spokenHour in 7..11 -> spokenHour + 12
+                else -> return null // '5 baje' or 'raat 2 baje' is ambiguous.
+            }
+            minute = spoken.groupValues[2].toIntOrNull() ?: 0
+        }
     }
     return day.atTime(hour, minute).atZone(clock.zone).toInstant().toEpochMilli()
         .takeIf { it > clock.millis() }
@@ -36,7 +49,8 @@ internal data class ConfidentReminder(val title: String, val dueAtMillis: Long)
 internal fun actionableReminder(line: String): Boolean = Regex(
     "\\b(call|meet|meeting|appointment|pay|submit|send|email|book|buy|pick up|" +
         "collect|renew|visit|take|bring|attend|register|deadline|due|interview|" +
-        "exam|flight|train|doctor|dentist|bill|class|event|webinar|follow up)\\b",
+        "exam|flight|train|doctor|dentist|bill|class|event|webinar|follow up|" +
+        "yaad dilana|fees|dawai|bhejna|jama karna)\\b",
     RegexOption.IGNORE_CASE).containsMatchIn(line)
 
 /** A model annotation must contain the date and clock time together, not separate UI fragments. */

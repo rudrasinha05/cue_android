@@ -34,12 +34,17 @@ class AlarmPlaybackService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var player: MediaPlayer? = null
     private var activeId: String? = null
+    private var playbackGeneration = 0
     private val stop = Runnable { stopSelf() }
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
-            if (activeId == intent.getStringExtra(EXTRA_ID)) stopSelf()
+            if (activeId == intent.getStringExtra(EXTRA_ID)) {
+                activeId = null
+                playbackGeneration++
+                stopSelf()
+            }
             return START_NOT_STICKY
         }
         if (intent?.action != ACTION_PLAY) { stopSelf(); return START_NOT_STICKY }
@@ -53,13 +58,14 @@ class AlarmPlaybackService : Service() {
             .setContentText("Snooze or dismiss the reminder to stop it")
             .setOngoing(true).build())
         activeId = id
+        val generation = ++playbackGeneration
         handler.removeCallbacks(stop)
         player?.release()
         player = null
         val tone = ReminderTones.selected(intent.getStringExtra(EXTRA_TONE).orEmpty())
         scope.launch {
         val repeats = ThemeStore(applicationContext).toneRepeats.first()
-        if (activeId != id) return@launch
+        if (activeId != id || generation != playbackGeneration) return@launch
         var played = 1
         val started = android.os.SystemClock.elapsedRealtime()
         val sound = runCatching {
@@ -76,11 +82,16 @@ class AlarmPlaybackService : Service() {
                         ?: android.net.Uri.parse("android.resource://$packageName/raw/cue_tone_01"))
                 isLooping = false
                 setOnCompletionListener { media ->
-                    if (activeId != id) return@setOnCompletionListener
+                    if (activeId != id || generation != playbackGeneration) return@setOnCompletionListener
                     if (played < repeats) {
-                        played++
-                        media.seekTo(0)
-                        media.start()
+                        val nextStart = started + played * 10_000L / repeats
+                        handler.postDelayed({
+                            if (activeId == id && generation == playbackGeneration) {
+                                played++
+                                media.seekTo(0)
+                                media.start()
+                            }
+                        }, (nextStart - android.os.SystemClock.elapsedRealtime()).coerceAtLeast(0L))
                     } else {
                         handler.postDelayed(stop,
                             (10_000L - (android.os.SystemClock.elapsedRealtime() - started)).coerceAtLeast(0L))
@@ -97,6 +108,8 @@ class AlarmPlaybackService : Service() {
     }
 
     override fun onDestroy() {
+        activeId = null
+        playbackGeneration++
         handler.removeCallbacks(stop)
         scope.cancel()
         player?.release()

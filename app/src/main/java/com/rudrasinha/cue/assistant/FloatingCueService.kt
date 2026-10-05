@@ -245,25 +245,36 @@ class FloatingCueService : Service() {
                     val clip = event.clipData
                     if (clip == null || clip.itemCount == 0) return@setOnDragListener false
                     val intake = CaptureIntake(applicationContext)
-                    (0 until minOf(clip.itemCount, 8)).forEach { index ->
-                        val item = clip.getItemAt(index)
-                        val uri = item.uri ?: item.intent?.data
-                        val text = item.text?.toString() ?: item.intent
-                            ?.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString() ?: item.htmlText?.let {
-                            android.text.Html.fromHtml(it, android.text.Html.FROM_HTML_MODE_COMPACT).toString()
-                        }
-                        captureScope.launch {
-                            try {
-                                if (uri != null) {
+                    captureScope.launch {
+                        val parts = mutableListOf<String>()
+                        var firstUri: String? = null
+                        var failedFile = false
+                        for (index in 0 until minOf(clip.itemCount, 8)) {
+                            val item = clip.getItemAt(index)
+                            val uri = item.uri ?: item.intent?.data
+                            if (uri != null) {
+                                try {
                                     val draft = importedText(applicationContext, uri)
-                                    intake.accept(draft.text, "drop", draft.origin.title, uri.toString())
-                                } else if (!text.isNullOrBlank()) intake.accept(text, "drop")
-                                else intake.failure("This app didn't provide readable data. Try Share → Cue.")
-                            } catch (_: SecurityException) {
-                                intake.failure("This app did not grant Cue access to that file. Use Share → Cue instead.")
-                            } catch (e: Exception) {
-                                intake.failure(e.message ?: "Try sharing this item with Cue instead.")
+                                    parts += draft.text
+                                    if (firstUri == null) firstUri = uri.toString()
+                                } catch (_: Exception) { failedFile = true }
+                            } else {
+                                val text = item.text?.toString() ?: item.intent
+                                    ?.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString() ?: item.htmlText?.let {
+                                    android.text.Html.fromHtml(it, android.text.Html.FROM_HTML_MODE_COMPACT).toString()
+                                }
+                                if (!text.isNullOrBlank()) parts += text
                             }
+                        }
+                        try {
+                            if (failedFile) intake.failure(
+                                "A dropped file wasn't readable. Use Share → Cue for that file.")
+                            if (parts.isNotEmpty()) intake.accept(parts.joinToString("\n").take(4000),
+                                "drop", if (parts.size > 1) "Dropped selection" else "Floating Cue", firstUri)
+                            else if (!failedFile) intake.failure(
+                                "This app didn't provide readable data. Try Share → Cue.")
+                        } catch (e: Exception) {
+                            intake.failure(e.message ?: "Try sharing this item with Cue instead.")
                         }
                     }
                     handler.postDelayed({ (view as TextView).text = "cue" }, 1300)

@@ -40,7 +40,7 @@ All entry points invoke one domain pipeline and one quick-action system. A commi
 
 ## Shared six actions
 
-Voice Reminder, Quick Reminder, Import/Scan, Ask AI, My Day, Assistant Settings. Floating Cue displays them in an inward-expanding radial menu based on screen position. It can drag, snap, partly hide at an edge, and has user-adjustable collapsed opacity; expanded actions stay readable. Notification mode exposes the same actions through platform-appropriate notification buttons and a tap-through action sheet.
+Voice Reminder, Quick Reminder, Import/Scan, My Day, Assistant Settings. Floating Cue displays them in an inward-expanding menu based on screen position. It can drag, snap, partly hide at an edge, and has user-adjustable collapsed opacity; expanded actions stay readable. Notification mode exposes capture actions through platform-appropriate notification buttons and a tap-through action sheet. There is no standalone AI navigation destination; automatic capture runs behind user-facing entry points.
 
 ## Data contract
 
@@ -69,7 +69,7 @@ The canonical entities are `Commitment`, `Occurrence`, `ReminderChain`, `Alert`,
 
 ### Reminder sounds and floating Cue
 
-The You screen offers the system default and 20 bundled OGG notification sounds. The default sound is stored in DataStore and copied into each new reminder. The alarm receiver uses that reminder’s saved tone; the silent alarm channel lets the playback service ring for ten seconds. Android notification settings may silence the channel.
+The You settings screen offers the system default and 20 bundled OGG notification sounds. The default sound and repeat count (1–5, default 3) are stored in DataStore; the chosen tone is copied into each new reminder. The alarm receiver uses that reminder’s saved tone; the silent alarm channel lets the playback service spread the selected number of rings over at least ten seconds. Android notification settings may silence the channel.
 
 Floating Cue runs as an opt-in foreground service with a persistent notification. It stores bubble position and appearance and requests a sticky restart after a process kill, then checks saved opt-in and signed-in owner before restoring. Temporary auth and preference loading no longer disables it when the activity is recreated. Touches and drag/drop are ignored while the keyguard is locked. Application overlays sit below critical system windows, so secure lock screens may hide the bubble; a public lock-screen notification offers an unlock-to-open route. Android notification privacy settings control whether that notification is visible.
 
@@ -81,7 +81,7 @@ An optional per-reminder nudge chain is stored with the canonical reminder and s
 
 ### Independent alarm tones and alarm controls
 
-Each commitment owns a `toneId`, set on manual creation or copied from the user's current default when an AI capture saves a reminder. Editing one reminder's tone does not change any other reminder. Room migration 4→5 and the additive cloud `commitments.tone_id` column default existing records to `default`. The shared alarm channel is silent; an exact-alarm-triggered media playback foreground service loops the chosen tone for 10 seconds, or stops sooner on Snooze/Dismiss. The alarm notification provides both actions and a full-screen alarm activity where Android permits it; when full-screen intent access is denied, the high-priority notification remains the supported action surface. Dismiss stops the current alert without completing the reminder; Snooze moves its due time 10 minutes ahead and records history. Editing, completion, deletion and sign-out stop outstanding playback. Android system notification, sound, Do Not Disturb, volume and foreground-service controls can restrict delivery.
+Each commitment owns a `toneId`, set on manual creation or copied from the user's current default when automatic capture saves a reminder. Editing one reminder's tone does not change any other reminder. Room migration 4→5 and the additive cloud `commitments.tone_id` column default existing records to `default`. The shared alarm channel is silent; an exact-alarm-triggered playback service plays the chosen tone 1–5 times, spaced across a minimum ten-second window, or stops sooner on Snooze/Dismiss. The alarm notification provides both actions and a full-screen alarm activity where Android permits it; when full-screen intent access is denied, the high-priority notification remains the supported action surface. Dismiss stops the current alert without completing the reminder; Snooze moves its due time 10 minutes ahead and records history. Editing, completion, deletion and sign-out stop outstanding playback. Android system notification, sound, Do Not Disturb, volume and foreground-service controls can restrict delivery.
 
 Floating Cue size is configurable from 48 to 88 dp below the opacity control in You. The collapsed bubble and its expanded-menu anchor resize together; opacity and size persist independently and update the running overlay immediately after selection.
 

@@ -37,18 +37,24 @@ class CaptureIntake(private val context: Context) {
         val title = candidate?.title ?: content.lineSequence()
             .firstOrNull { it.isNotBlank() }?.trim()?.take(100) ?: "New reminder"
         // An explicit bubble entry or drop is a reminder even when no time can be inferred.
-        if (candidate == null && (type == "bubble" || type == "drop")) {
+        if (candidate == null && (type == "bubble" || type == "drop") &&
+            content.length <= 250 && content.lineSequence().count() <= 5) {
             val ownerId = ReminderScheduler(context).activeOwnerId() ?: "guest"
             val database = CueDatabase.get(context)
             val tone = ThemeStore(context).reminderTone.first()
             val scheduler = ReminderScheduler(context)
             val actions = CommitmentActions(database, scheduler,
                 CloudCommitments(database, CueAuth(context).client, scheduler))
-            saveLock.withLock {
-                actions.save(ownerId, null, title, content.take(2000), null,
-                    CaptureOrigin(type, titleHint ?: "Floating Cue", content.take(2000), uri), tone)
+            val key = fingerprint(content)
+            val result = saveLock.withLock {
+                if (database.history().sourceByOrigin(ownerId, type, key) != null) "Already saved"
+                else {
+                    actions.save(ownerId, null, title, content.take(2000), null,
+                        CaptureOrigin(type, titleHint ?: "Floating Cue", content.take(2000), uri, key), tone)
+                    "Reminder set"
+                }
             }
-            acknowledge("Reminder saved", "$title · No alert set")
+            acknowledge(result, "$title · No alert set")
             return true
         }
         if (candidate == null) {
@@ -58,6 +64,7 @@ class CaptureIntake(private val context: Context) {
                     action = Intent.ACTION_SEND
                     this.type = "text/plain"
                     putExtra(Intent.EXTRA_TEXT, content)
+                    putExtra("com.rudrasinha.cue.REVIEW_CAPTURE", true)
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or
                         Intent.FLAG_ACTIVITY_SINGLE_TOP
                 })
@@ -68,16 +75,15 @@ class CaptureIntake(private val context: Context) {
         val database = CueDatabase.get(context)
         val defaultTone = ThemeStore(context).reminderTone.first()
         val result = saveLock.withLock {
-            val key = MessageDigest.getInstance("SHA-256").digest(
-                "${title.lowercase()}|$due|${content.lowercase()}".toByteArray(Charsets.UTF_8))
-                .joinToString("") { "%02x".format(it) }
+            val key = fingerprint("${title.lowercase()}|$due|${content.lowercase()}")
             val actions = CommitmentActions(database, ReminderScheduler(context),
                 CloudCommitments(database, CueAuth(context).client, ReminderScheduler(context)))
             val details = if (type == "screen") null else content.take(2000)
             val excerpt = if (type == "screen") title else content.take(2000)
             val origin = CaptureOrigin(type, titleHint, excerpt, uri, key)
             val existing = ReminderMatch.existing(database.commitments().activeAtDue(ownerId, due), title)
-            if (existing != null) {
+            if (database.history().sourceByOrigin(ownerId, type, key) != null) "Already saved"
+            else if (existing != null) {
                 if (actions.linkSource(ownerId, existing.id, origin)) "Source linked to reminder"
                 else "Already saved"
             } else {
@@ -92,6 +98,10 @@ class CaptureIntake(private val context: Context) {
     }
 
     fun failure(message: String) = acknowledge("Cue couldn't read that item", message)
+
+    private fun fingerprint(value: String): String = MessageDigest.getInstance("SHA-256")
+        .digest(value.trim().lowercase().toByteArray(Charsets.UTF_8))
+        .joinToString("") { "%02x".format(it) }
 
     private fun acknowledge(title: String, body: String, open: Intent? = null) {
         if (Build.VERSION.SDK_INT >= 33 &&

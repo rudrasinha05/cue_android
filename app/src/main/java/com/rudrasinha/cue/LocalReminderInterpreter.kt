@@ -23,15 +23,16 @@ internal object LocalReminderInterpreter {
 
     suspend fun find(text: String): ConfidentReminder? {
         val lines = text.lineSequence().map(String::trim).filter(String::isNotBlank)
-            .take(21).toList()
-        if (lines.size > 20) return null // Too much context for unattended creation.
-        val explicit = lines.mapNotNull { line ->
-            if (actionableReminder(line)) suggestedDue(line)?.let { ConfidentReminder(line.take(100), it) }
-            else null
+            .take(121).toList()
+        if (lines.size > 120) return null // Avoid unattended extraction from long, mixed documents.
+        val actionable = lines.filter(::actionableReminder)
+        if (actionable.size > 8) return null
+        val explicit = actionable.mapNotNull { line ->
+            suggestedDue(line)?.let { ConfidentReminder(line.take(100), it) }
         }
         if (explicit.size > 1) return null
         if (explicit.size == 1) return explicit.single()
-        if (lines.none(::actionableReminder)) return null
+        if (actionable.isEmpty()) return null
 
         return withContext(Dispatchers.IO) {
             modelLock.withLock {
@@ -43,7 +44,7 @@ internal object LocalReminderInterpreter {
                     catch (_: Exception) { return@withLock null }
                 }
                 val candidates = mutableListOf<ConfidentReminder>()
-                for (line in lines.filter(::actionableReminder)) {
+                for (line in actionable) {
                     if (line.length > 250) continue
                     val params = EntityExtractionParams.Builder(line)
                         .setPreferredLocale(Locale.US).build()

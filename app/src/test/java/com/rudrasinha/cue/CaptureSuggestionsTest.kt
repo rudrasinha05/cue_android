@@ -26,6 +26,15 @@ class CaptureSuggestionsTest {
         assertNull(suggestedDue("Bring 9 apples tomorrow", clock))
     }
 
+    @Test fun explicitHinglishTimeCanBeScheduledWithoutGuessingAmPm() {
+        assertEquals(Instant.parse("2026-10-01T09:30:00Z").toEpochMilli(),
+            suggestedDue("Kal subah 9:30 baje meeting yaad dilana", clock))
+        assertEquals(Instant.parse("2026-09-30T17:00:00Z").toEpochMilli(),
+            suggestedDue("Aaj shaam 5 baje bill pay", clock))
+        assertNull(suggestedDue("Kal 5 baje bill pay", clock))
+        assertNull(suggestedDue("Kal raat 2 baje call", clock))
+    }
+
     @Test fun screenLinesCannotCombineUnrelatedDateAndTime() {
         assertNull(confidentReminder("Tomorrow's events\n9 pm weather update", clock))
         assertNull(confidentReminder("Pay today at 6 pm\nCall tomorrow at 9 pm", clock))

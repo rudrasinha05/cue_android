@@ -124,6 +124,17 @@ class MainActivity : ComponentActivity() {
     private var shortcutAction by mutableStateOf<String?>(null)
 
     fun queueCapture(draft: CaptureDraft) { captureDraft = draft }
+    private fun processSharedText(incoming: Intent?) {
+        val draft = sharedText(incoming) ?: return
+        if (incoming?.getBooleanExtra("com.rudrasinha.cue.REVIEW_CAPTURE", false) == true) {
+            queueCapture(draft)
+        } else intakeScope.launch {
+            try { CaptureIntake(applicationContext).accept(draft.text, draft.origin.type,
+                draft.origin.title, draft.origin.uri) }
+            catch (e: Exception) { CaptureIntake(applicationContext).failure(
+                e.message ?: "Could not process the shared text.") }
+        }
+    }
     private fun readSharedUri(incoming: Intent?) {
         if (incoming?.action != Intent.ACTION_SEND || sharedText(incoming) != null) return
         val uri = if (Build.VERSION.SDK_INT >= 33)
@@ -132,7 +143,12 @@ class MainActivity : ComponentActivity() {
         val source = uri ?: incoming.clipData?.getItemAt(0)?.uri ?: return
         intakeScope.launch {
             runCatching { withContext(Dispatchers.IO) { importedText(this@MainActivity, source) } }
-                .onSuccess(::queueCapture)
+                .onSuccess { draft ->
+                    try { CaptureIntake(applicationContext).accept(draft.text, draft.origin.type,
+                        draft.origin.title, draft.origin.uri) }
+                    catch (e: Exception) { CaptureIntake(applicationContext).failure(
+                        e.message ?: "Could not process the shared file.") }
+                }
                 .onFailure { CaptureIntake(applicationContext).failure(
                     it.message ?: "Could not read the shared item.") }
         }
@@ -145,15 +161,17 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        sharedText(intent)?.let(::queueCapture)
+        processSharedText(intent)
         readSharedUri(intent)
         shortcutAction = intent.getStringExtra(AssistantControls.EXTRA_ACTION)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        captureDraft = sharedText(intent)
-        readSharedUri(intent)
+        if (savedInstanceState == null) {
+            processSharedText(intent)
+            readSharedUri(intent)
+        }
         shortcutAction = intent?.getStringExtra(AssistantControls.EXTRA_ACTION)
         val themeStore = ThemeStore(applicationContext)
         val database = CueDatabase.get(applicationContext)

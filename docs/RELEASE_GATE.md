@@ -7,7 +7,7 @@
 - Update an existing installation without clearing data. Confirm Room migration, Google return login, account isolation and guest reminder preservation.
 - On Android 8, 13, 14 and 15 where available, run [reminder checks](M2_DEVICE_CHECKS.md) and [capture/history checks](M3_CAPTURE_HISTORY_CHECKS.md), including denied/revoked permissions, offline alerts, overlay drag/drop, screen-session stop, 20 sounds, themes and alarm actions.
 - On two signed-in devices, sync an older verified archive, restore its exact event count/checksum on the second device, test a conflicting offline edit and export the complete account JSON.
-- Review every screen at normal and large font size in light/dark palettes with TalkBack. Compare the final visual design with the approved reference on a phone. Keep the existing five-tab footer layout.
+- Review every screen at normal and large font size in light/dark palettes with TalkBack. Compare the final visual design with the approved reference on a phone. Verify the four-tab footer and voice/import entry points on Reminders.
 
 ## Play candidate
 
