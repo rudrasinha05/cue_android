@@ -1,6 +1,6 @@
 # Cue AI and email activation contract
 
-Cloud analysis has an explicit account-scoped opt-in and a deployed authenticated function. Gemini responses require the owner to configure its server-side key. Email access remains off; users can explicitly Share → Cue from an email app without mailbox permissions.
+Cloud analysis has an explicit account-scoped opt-in and a deployed authenticated function. Gemini responses require a configured server-side key and real provider tests before release. Email access remains off; users can explicitly Share → Cue from an email app without mailbox permissions.
 
 ## Optional cloud deadline analysis
 
@@ -9,7 +9,7 @@ Cloud analysis has an explicit account-scoped opt-in and a deployed authenticate
 - The signed-in user must explicitly opt in under You before any cloud request. Default stays local-only. The UI must name Supabase and Google Gemini, show the exact scope, provide a way to turn it off, and avoid cloud requests when off or signed out.
 - The server verifies the user token against Supabase Auth, bounds input/output, and returns only a proposed future due time. The Android confidence gate must validate it before creating a reminder. Neither the function nor Gemini writes reminders or their history.
 - `GEMINI_API_KEY` is stored in Supabase Edge Function secrets, never the APK or Git. The function requires platform JWT verification, checks the caller's identity again, and atomically consumes a per-owner database quota (10 per minute, 200 per UTC day) before calling Gemini. If the provider or quota service is unavailable, the Android app falls back to local extraction. Provider/device QA still remains before release.
-- Automatic approval review rejected deployment because sending private reminder text to Gemini and using custom token verification need explicit approval for this destination and data scope. Do not deploy or wire the Android client before that approval. There are currently no Edge Functions in the Cue project.
+- **Live audit (2026-10-09):** The Cue project reports `cue-analyze` ACTIVE (version 5) with platform JWT verification enabled; `cue-delete-account` is also ACTIVE. The Android opt-in client and function source exist. Presence of `GEMINI_API_KEY`, successful provider results and phone QA were **not** verified. The feature must still pass privacy, consent, quota, data-handling and Play review before publication.
 
 ## Email
 
