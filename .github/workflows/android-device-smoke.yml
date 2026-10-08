@@ -14,6 +14,10 @@ permissions:
 
 jobs:
   emulator-smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        api_level: [35, 36]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -29,10 +33,10 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Android 15 instrumented tests
+      - name: Android API ${{ matrix.api_level }} instrumented tests
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 35
+          api-level: ${{ matrix.api_level }}
           arch: x86_64
           profile: pixel_6
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
@@ -42,7 +46,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: cue-device-smoke-results
+          name: cue-device-smoke-api-${{ matrix.api_level }}
           path: |
             app/build/reports/androidTests/connected/**
             app/build/outputs/androidTest-results/connected/**

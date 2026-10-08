@@ -46,6 +46,7 @@ $api = (& $adb @target shell getprop ro.build.version.sdk).Trim()
 $commit = (& git rev-parse --short HEAD 2>$null)
 Write-Host "Android $android (API $api); Cue commit $commit"
 Write-Host "The script will not uninstall Cue or clear its stored data."
+Write-Host "Keep your phone UNLOCKED and screen ON until testing finishes."
 
 & .\gradlew.bat :app:assembleDebug :app:assembleDebugAndroidTest
 if ($LASTEXITCODE -ne 0) { throw "Gradle build failed." }
@@ -69,7 +70,23 @@ $exitCode = $LASTEXITCODE
 $results | Tee-Object -FilePath $report
 Add-Content -Path $report -Value "Android: $android (API $api); Commit: $commit; Device: $Serial"
 if ($exitCode -ne 0 -or !(($results -join [Environment]::NewLine) -match "OK \(")) {
-    throw "Instrumented tests did not pass. Review $report"
+    # Read-only diagnostics. Do not capture screenshots, personal app logs or tokens.
+    $diagnosticPath = "qa-results\cue-diagnostics-$(Get-Date -Format 'yyyyMMdd-HHmmss').txt"
+    "Cue Android diagnostics - $android API $api / $Serial / $commit" | Out-File -FilePath $diagnosticPath
+    "=== Window focus ===" | Add-Content -Path $diagnosticPath
+    & $adb @target shell dumpsys window 2>&1 |
+        Select-String -Pattern 'mCurrentFocus|mFocusedApp|mTopFocusedDisplayId' |
+        Select-Object -First 15 | Out-String | Add-Content -Path $diagnosticPath
+    "=== Activity state ===" | Add-Content -Path $diagnosticPath
+    & $adb @target shell dumpsys activity activities 2>&1 |
+        Select-String -Pattern 'topResumedActivity|mResumedActivity|ResumedActivity|com.rudrasinha.cue' |
+        Select-Object -First 25 | Out-String | Add-Content -Path $diagnosticPath
+    "=== Recent Android crashes (filtered; review before sharing) ===" | Add-Content -Path $diagnosticPath
+    & $adb @target logcat -d -t 1500 -s AndroidRuntime:E 2>&1 |
+        Select-String -Pattern 'FATAL EXCEPTION|Process: com.rudrasinha.cue|at com.rudrasinha.cue' -Context 0, 8 |
+        Select-Object -Last 70 | Out-String | Add-Content -Path $diagnosticPath
+    Write-Host "Diagnostics saved: $diagnosticPath"
+    throw "Instrumented tests did not pass. See $report and $diagnosticPath"
 }
 Write-Host "Automated phone smoke tests passed. Report: $report"
 Write-Host "Manual bubble, sound and screen-capture checks remain."
