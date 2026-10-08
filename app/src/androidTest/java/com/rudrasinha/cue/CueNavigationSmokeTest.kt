@@ -15,8 +15,16 @@ class CueNavigationSmokeTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
 
     @Test fun coreTabsAndHelpRemainReachable() {
-        compose.waitUntil(timeoutMillis = 20_000) {
-            compose.onAllNodes(hasText("You")).fetchSemanticsNodes().isNotEmpty()
+        // On slower phones the activity may launch before a Compose root is attached.
+        // Treat only that startup race as "not ready" and keep polling; do not
+        // suppress unexpected test or application errors.
+        compose.waitUntil(timeoutMillis = 30_000) {
+            try {
+                compose.onAllNodes(hasText("You")).fetchSemanticsNodes().isNotEmpty()
+            } catch (error: IllegalStateException) {
+                if (error.message?.contains("No compose hierarchies found") == true) false
+                else throw error
+            }
         }
         compose.onNodeWithText("You").performClick()
         compose.onNodeWithText("Your space").assertExists()
