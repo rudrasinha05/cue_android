@@ -1133,6 +1133,12 @@ private fun YouScreen(
                 "Made for your everyday life" to "Use Cue for lectures, appointments, travel, interviews and personal tasks. Add a reminder yourself, or give Cue text, an image or a document to interpret.",
                 "You stay in control" to "Automatic capture needs the permissions and features you choose to enable. Check reminder details when information is unclear. You can edit or delete reminders and clear your learned routine.",
                 "An honest promise" to "Cue is still improving. Imported information can be incomplete, and Android permissions or battery settings can affect delivery. Check essential deadlines; Cue cannot guarantee that every event will be detected."
+            ) else if (helpPage == "Privacy and data") listOf(
+                "On-device reminders" to "You can create reminders without signing in. Reminder details, preferences and local history are kept on your device until you choose to remove them.",
+                "Optional account sync" to "If you sign in with Google, Cue uses its Supabase service to sync reminders, source references, history and compressed archives. Your Cue profile can contain an email, display name, and contact details you choose to enter.",
+                "Optional capture" to "Screen capture requires Android approval and is processed locally for text extraction; Cue does not save screen video. Shared text, imported documents, voice recognition and notification suggestions depend on the permissions and services you choose to use. Accepted reminder text or excerpts can appear in saved history.",
+                "Cloud interpretation" to "If you explicitly enable cloud analysis, Cue may send reminder text and timezone through its authenticated server function to Google Gemini to interpret dates. Speech recognition may also use an external Android recognition provider.",
+                "Your controls" to "You can revoke feature permissions in Android settings, export your Cue data, delete synced Cue data, or delete your Cue account in this screen. Deleting a Cue account does not delete your Google account. Cue does not automatically read your Gmail inbox."
             ) else listOf(
                 "1 · Create your first reminder" to "Tap +. Write what you need to remember, choose the date and time, then select a ringtone and save. Selecting a tone previews it. Manual reminders do not send a separate creation notification.",
                 "2 · Use Cue over other apps" to "In You → Settings, enable Floating Cue and allow Display over other apps. Tap the bubble for shortcuts. Drag it to move it; release over the bottom close target to switch it off. Enable it again in Settings.",
@@ -1262,6 +1268,7 @@ private fun YouScreen(
             OutlinedButton(onClick = { helpPage = "About Cue" }) { Text("About Cue") }
             OutlinedButton(onClick = { helpPage = "User manual" }) { Text("User manual") }
         }
+        TextButton(onClick = { helpPage = "Privacy and data" }) { Text("Privacy and data") }
         Spacer(Modifier.height(24.dp))
         Text("Your routine", style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.SemiBold)
