@@ -464,16 +464,46 @@ class FloatingCueService : Service() {
 
     private fun captureClip(clip: ClipData, type: String, onFinished: (() -> Unit)? = null) {
         val items = (0 until minOf(clip.itemCount, 8)).map(clip::getItemAt)
+        // Acquire readable handles before the source ends its drag/clipboard grant.
+        val handles = items.map { item ->
+            val uri = item.uri ?: item.intent?.data
+            uri?.let { runCatching { contentResolver.openFileDescriptor(it, "r") }.getOrNull() }
+        }
         captureScope.launch {
             val parts = mutableListOf<String>()
             var firstUri: String? = null
             var blockedFiles = 0
-            for (item in items) {
+            for ((index, item) in items.withIndex()) {
                 val uri = item.uri ?: item.intent?.data
                 if (uri != null) {
                     try {
-                        val draft = importedText(applicationContext, uri)
-                        parts += draft.text
+                        val handle = handles[index] ?: error("Source did not grant file access")
+                        val name = runCatching {
+                            contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+                                if (it.moveToFirst()) it.getString(0) else null
+                            }
+                        }.getOrNull()
+                        val extension = name?.substringAfterLast('.', "")?.takeIf { it.matches(Regex("[A-Za-z0-9]{1,8}")) }
+                            ?: android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(contentResolver.getType(uri))
+                            ?: "bin"
+                        val temporary = java.io.File(cacheDir, "cue-drop-${java.util.UUID.randomUUID()}.$extension")
+                        try {
+                            android.os.ParcelFileDescriptor.AutoCloseInputStream(handle).use { input ->
+                                temporary.outputStream().use { output ->
+                                    val buffer = ByteArray(8192)
+                                    var total = 0L
+                                    while (true) {
+                                        val count = input.read(buffer)
+                                        if (count < 0) break
+                                        total += count
+                                        check(total <= 16L * 1024 * 1024) { "File exceeds 16 MB" }
+                                        output.write(buffer, 0, count)
+                                    }
+                                }
+                            }
+                            val draft = importedText(applicationContext, android.net.Uri.fromFile(temporary))
+                            parts += draft.text
+                        } finally { temporary.delete(); runCatching { handle.close() } }
                         if (firstUri == null) firstUri = uri.toString()
                     } catch (_: Exception) { blockedFiles++ }
                 } else {
@@ -495,6 +525,7 @@ class FloatingCueService : Service() {
             } catch (e: Exception) {
                 intake.failure(e.message ?: "Could not analyze this item.")
             } finally {
+                handles.forEach { handle -> runCatching { handle?.close() } }
                 if (onFinished != null) handler.post { onFinished() }
             }
         }

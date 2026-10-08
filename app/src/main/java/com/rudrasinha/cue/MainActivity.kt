@@ -1106,6 +1106,7 @@ private fun YouScreen(
     onImportMail: () -> Unit,
     padding: PaddingValues
 ) {
+    var helpPage by remember { mutableStateOf<String?>(null) }
     var deleteDataPrompt by remember { mutableStateOf(false) }
     var deleteAccountPrompt by remember { mutableStateOf(false) }
     var cloudConsentPrompt by remember { mutableStateOf(false) }
@@ -1118,6 +1119,39 @@ private fun YouScreen(
             editName = it.name; editGender = it.gender; editMobile = it.contactMobile
             editingProfile = false
         }
+    }
+    if (helpPage != null) {
+        androidx.activity.compose.BackHandler { helpPage = null }
+        Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(24.dp)) {
+            TextButton(onClick = { helpPage = null }) { Text("← Back to You") }
+            Text(helpPage!!, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(20.dp))
+            val sections = if (helpPage == "About Cue") listOf(
+                "A little help, right on time" to "Cue helps you turn everyday information into useful reminders, with fewer steps. Our goal is to make remembering easier while you focus on your day.",
+                "Made for your everyday life" to "Use Cue for lectures, appointments, travel, interviews and personal tasks. Add a reminder yourself, or give Cue text, an image or a document to interpret.",
+                "You stay in control" to "Automatic capture needs the permissions and features you choose to enable. Check reminder details when information is unclear. You can edit or delete reminders and clear your learned routine.",
+                "An honest promise" to "Cue is still improving. Imported information can be incomplete, and Android permissions or battery settings can affect delivery. Check essential deadlines; Cue cannot guarantee that every event will be detected."
+            ) else listOf(
+                "1 · Create your first reminder" to "Tap +. Write what you need to remember, choose the date and time, then select a ringtone and save. Selecting a tone previews it. Manual reminders do not send a separate creation notification.",
+                "2 · Use Cue over other apps" to "In You → Settings, enable Floating Cue and allow Display over other apps. Tap the bubble for shortcuts. Drag it to move it; release over the bottom close target to switch it off. Enable it again in Settings.",
+                "3 · Copy, paste or share" to "Copy text or a supported file, hold the bubble, then tap Paste. You can also drag an item onto Cue when the source app supports it. If a file cannot be read, use that app’s Share → Cue option. Copying an image does not always include the image file.",
+                "4 · Let Cue interpret information" to "Use the bubble’s voice or screen shortcut, or share a message or document. Include a clear date and time where possible. Cue saves clear reminders and shows a notification; unclear information may need your review. Screen capture may require Android’s permission dialog.",
+                "5 · Bring in your schedule" to "You → Import reminders lets you select Google Calendar events or paste a Gmail booking or interview message. This does not automatically read your whole inbox. For a lecture timetable, use the timetable import and enter your faculty abbreviation so only your slots are selected.",
+                "6 · Find and manage reminders" to "Use the calendar and Upcoming to check dates. Open a reminder to review its details, edit it or delete it. When an alarm appears, choose Snooze to postpone it or Dismiss to stop it.",
+                "7 · Make Cue yours" to "You → Settings contains themes, bubble size and opacity, ringtone and repeat settings, and optional capture features. Your profile and account controls are in You. Learn active hours is optional; Clear learned routine removes the local pattern.",
+                "8 · If something does not work" to "Check notifications, alarm access and the permissions for the feature you enabled. Cloud interpretation needs internet. If a dropped file is inaccessible, share it to Cue instead. Review essential reminders after importing them."
+            )
+            sections.forEach { (title, body) ->
+                Card(Modifier.fillMaxWidth().padding(bottom = 12.dp), shape = RoundedCornerShape(24.dp)) {
+                    Column(Modifier.padding(20.dp)) {
+                        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.height(8.dp))
+                        Text(body, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
+        return
     }
     Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(24.dp)) {
         if (settingsOpen) androidx.compose.material3.TextButton(onClick = { onSettingsOpen(false) }) {
@@ -1221,6 +1255,11 @@ private fun YouScreen(
         }
         Spacer(Modifier.height(8.dp))
         TextButton(onClick = onImportMail) { Text("Paste a Gmail message") }
+        Spacer(Modifier.height(16.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedButton(onClick = { helpPage = "About Cue" }) { Text("About Cue") }
+            OutlinedButton(onClick = { helpPage = "User manual" }) { Text("User manual") }
+        }
         Spacer(Modifier.height(24.dp))
         Text("Your routine", style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.SemiBold)

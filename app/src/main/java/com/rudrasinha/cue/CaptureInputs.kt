@@ -35,9 +35,11 @@ internal fun sharedText(intent: Intent?): CaptureDraft? {
 
 internal fun importedText(context: Context, uri: Uri): CaptureDraft {
     val resolver = context.contentResolver
-    val name = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
-        if (it.moveToFirst()) it.getString(0) else null
-    } ?: "Document"
+    val name = runCatching {
+        resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+            if (it.moveToFirst()) it.getString(0) else null
+        }
+    }.getOrNull() ?: uri.lastPathSegment ?: "Document"
     val mime = resolver.getType(uri).orEmpty()
     val isImage = mime.startsWith("image/") || listOf(".jpg", ".jpeg", ".png", ".webp")
         .any { name.endsWith(it, true) }
