@@ -23,7 +23,16 @@ object ReminderMatch {
 
     /** A strict local fallback: one matching action and identical object words at the same due time. */
     private fun equivalentAction(value: String): Pair<String, List<String>>? {
-        val words = normalizedTitle(value).split(' ').filter { it.isNotBlank() && it !in filler }
+        // The query is restricted to reminders at the same exact due instant.
+        // Ignore wording of that instant, but never discard arbitrary numbers
+        // ("buy 2 tickets" must remain different from "buy 3 tickets").
+        val withoutClock = value.lowercase(Locale.ROOT)
+            .replace(Regex("\\b([01]?\\d|2[0-3]):[0-5]\\d\\b"), " ")
+            .replace(Regex("\\b(1[0-2]|0?[1-9])(?::[0-5]\\d)?\\s*(am|pm)\\b"), " ")
+        val timeWords = setOf("today", "tomorrow", "aaj", "kal", "at", "by", "on",
+            "baje", "subah", "dopahar", "shaam", "sham", "raat")
+        val words = normalizedTitle(withoutClock).split(' ')
+            .filter { it.isNotBlank() && it !in filler && it !in timeWords }
         val actions = words.mapNotNull { verbs[it] }.distinct()
         if (actions.size != 1) return null
         val objectWords = words.filter { it !in verbs }.map { objects[it] ?: it }.sorted()
