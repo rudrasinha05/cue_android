@@ -32,8 +32,10 @@ class CueAccessibilitySmokeTest {
         val controls = compose.onAllNodes(hasClickAction()).fetchSemanticsNodes()
         assertTrue("No discoverable clickable controls", controls.isNotEmpty())
         val named = controls.count { node ->
-            val text = node.config.getOrNull(SemanticsProperties.Text)
-            val descriptions = node.config.getOrNull(SemanticsProperties.ContentDescription)
+            val text = runCatching { node.config[SemanticsProperties.Text] }.getOrNull()
+            val descriptions = runCatching {
+                node.config[SemanticsProperties.ContentDescription]
+            }.getOrNull()
             !text.isNullOrEmpty() || !descriptions.isNullOrEmpty()
         }
         assertTrue("Too few named clickable UI controls for screen-reader navigation", named >= 4)
