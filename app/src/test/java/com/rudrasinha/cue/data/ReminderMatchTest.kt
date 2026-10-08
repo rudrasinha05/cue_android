@@ -26,6 +26,21 @@ class ReminderMatchTest {
         assertNull(ReminderMatch.existing(listOf(existing), "Pay electricity bill and rent"))
     }
 
+    @Test fun equivalentSchedulesMatchAtTheSameDueInstant() {
+        val existing = reminder("Pay electricity bill tomorrow at 5:30 pm")
+        assertEquals(existing, ReminderMatch.existing(listOf(existing),
+            "Electricity bill payment by kal 17:30"))
+        assertNull(ReminderMatch.existing(listOf(existing),
+            "Pay internet bill tomorrow at 5:30 pm"))
+    }
+
+    @Test fun quantitiesAndDifferentActionsMustNotMerge() {
+        val two = reminder("Buy 2 tickets tomorrow at 6 pm")
+        assertNull(ReminderMatch.existing(listOf(two), "Purchase 3 tickets kal 18:00"))
+        assertEquals(two, ReminderMatch.existing(listOf(two), "Purchase 2 tickets kal 18:00"))
+        assertNull(ReminderMatch.existing(listOf(two), "Book 2 tickets tomorrow at 6 pm"))
+    }
+
     @Test fun safeSynonymsStillPreserveDifferentObjects() {
         val existing = reminder("Renew subscription")
         assertEquals(existing, ReminderMatch.existing(listOf(existing), "My subscription renewal"))
