@@ -27,8 +27,8 @@ object ReminderMatch {
         // Ignore wording of that instant, but never discard arbitrary numbers
         // ("buy 2 tickets" must remain different from "buy 3 tickets").
         val withoutClock = value.lowercase(Locale.ROOT)
-            .replace(Regex("\\b([01]?\\d|2[0-3]):[0-5]\\d\\b"), " ")
             .replace(Regex("\\b(1[0-2]|0?[1-9])(?::[0-5]\\d)?\\s*(am|pm)\\b"), " ")
+            .replace(Regex("\\b([01]?\\d|2[0-3]):[0-5]\\d\\b"), " ")
         val timeWords = setOf("today", "tomorrow", "aaj", "kal", "at", "by", "on",
             "baje", "subah", "dopahar", "shaam", "sham", "raat")
         val words = normalizedTitle(withoutClock).split(' ')
