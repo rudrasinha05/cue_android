@@ -11,6 +11,19 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
+      - name: Validate phone QA PowerShell syntax
+        shell: pwsh
+        run: |
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path $PWD 'tools/cue-phone-smoke.ps1'),
+            [ref]$null,
+            [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | Format-List | Out-String | Write-Host
+            throw 'Phone QA PowerShell script has syntax errors.'
+          }
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
