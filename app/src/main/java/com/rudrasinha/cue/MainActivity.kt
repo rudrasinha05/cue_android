@@ -80,6 +80,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -1124,7 +1125,8 @@ private fun YouScreen(
     }
     if (helpPage != null) {
         androidx.activity.compose.BackHandler { helpPage = null }
-        Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(24.dp)) {
+        Column(Modifier.fillMaxSize().testTag(if (helpPage == "Privacy and data") "cue-privacy-content" else "cue-help-content")
+            .padding(padding).verticalScroll(rememberScrollState()).padding(24.dp)) {
             TextButton(onClick = { helpPage = null }) { Text("← Back to You") }
             Text(helpPage!!, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(20.dp))

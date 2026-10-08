@@ -2,6 +2,7 @@ package com.rudrasinha.cue
 
 import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -45,6 +46,7 @@ class CueNavigationSmokeTest {
         compose.onNodeWithText("About Cue").assertExists()
         compose.onNodeWithText("User manual").assertExists()
         compose.onNodeWithText("Privacy and data").performClick()
-        compose.onNodeWithText("On-device reminders").assertExists()
+        compose.onNodeWithTag("cue-privacy-content").assertExists()
+        compose.onNodeWithText("← Back to You").assertExists()
     }
 }
