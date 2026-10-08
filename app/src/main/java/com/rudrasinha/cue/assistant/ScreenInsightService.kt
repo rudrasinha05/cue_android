@@ -56,6 +56,14 @@ class ScreenInsightService : Service() {
     private var display: VirtualDisplay? = null
     private var reader: ImageReader? = null
     private var lastSample = 0L
+    // A one-time scan must end even if the system never delivers a readable frame.
+    private val oneShotTimeout = Runnable {
+        if (oneShot && !stopping) {
+            CaptureIntake(applicationContext).failure(
+                "Screen scan timed out. Try again or use Share → Cue.")
+            stopSelf()
+        }
+    }
     private var startedAt = 0L
     private var oneShot = false
     private var lastCandidateFingerprint = ""
@@ -82,6 +90,7 @@ class ScreenInsightService : Service() {
         }
         oneShot = intent?.getBooleanExtra(EXTRA_ONCE, false) == true
         startedAt = SystemClock.elapsedRealtime()
+        if (oneShot) handler.postDelayed(oneShotTimeout, 20_000L)
         try {
             val notification = notice()
             startForeground(NOTIFICATION_ID, notification,
@@ -200,6 +209,7 @@ class ScreenInsightService : Service() {
 
     override fun onDestroy() {
         stopping = true
+        handler.removeCallbacks(oneShotTimeout)
         running.value = false
         work.cancel()
         display?.release()
