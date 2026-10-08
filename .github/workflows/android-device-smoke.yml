@@ -8,6 +8,7 @@ on:
       - 'app/src/androidTest/**'
       - 'app/build.gradle.kts'
       - '.github/workflows/android-device-smoke.yml'
+      - '.github/scripts/android-emulator-smoke.sh'
 
 permissions:
   contents: read
@@ -42,20 +43,7 @@ jobs:
           profile: pixel_6
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
           disable-animations: true
-          script: |
-            ./gradlew :app:connectedDebugAndroidTest --stacktrace
-            original_font="$(adb shell settings get system font_scale | tr -d '\r')"
-            restore_font() {
-              if [ "$original_font" = "null" ] || [ -z "$original_font" ]; then
-                adb shell settings delete system font_scale
-              else
-                adb shell settings put system font_scale "$original_font"
-              fi
-            }
-            trap restore_font EXIT
-            adb shell settings put system font_scale 1.5
-            adb shell am force-stop com.rudrasinha.cue
-            ./gradlew :app:connectedDebugAndroidTest --stacktrace
+          script: bash .github/scripts/android-emulator-smoke.sh
       - name: Upload device test reports
         if: always()
         uses: actions/upload-artifact@v4
