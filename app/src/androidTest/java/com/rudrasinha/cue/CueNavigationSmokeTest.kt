@@ -44,5 +44,7 @@ class CueNavigationSmokeTest {
         compose.onNodeWithText("You").performClick()
         compose.onNodeWithText("About Cue").assertExists()
         compose.onNodeWithText("User manual").assertExists()
+        compose.onNodeWithText("Privacy and data").performClick()
+        compose.onNodeWithText("On-device reminders").assertExists()
     }
 }
