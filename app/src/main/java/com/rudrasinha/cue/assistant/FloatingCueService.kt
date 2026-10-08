@@ -444,16 +444,19 @@ class FloatingCueService : Service() {
             }
             setOnClickListener {
                 if (locked()) return@setOnClickListener
-                val clip = getSystemService(ClipboardManager::class.java).primaryClip
-                if (clip == null || clip.itemCount == 0)
-                    CaptureIntake(applicationContext).failure("Clipboard is empty or unavailable. Copy an item first.")
-                else captureClip(clip, "paste") {
+                // Clipboard access can be denied by Android when Cue has lost window focus.
+                // Never let a clipboard SecurityException crash the floating service.
+                val clip = runCatching {
+                    getSystemService(ClipboardManager::class.java).primaryClip
+                }.getOrNull()
+                if (clip == null || clip.itemCount == 0) {
+                    CaptureIntake(applicationContext).failure(
+                        "Clipboard is empty or access is restricted. Copy the item again, or use Share → Cue.")
+                    pasteEntry = false; expanded = false; showWindow()
+                } else captureClip(clip, "paste") {
                     pasteEntry = false
                     expanded = false
                     showWindow()
-                }
-                if (clip == null || clip.itemCount == 0) {
-                    pasteEntry = false; expanded = false; showWindow()
                 }
             }
         }
@@ -474,6 +477,11 @@ class FloatingCueService : Service() {
             var firstUri: String? = null
             var blockedFiles = 0
             for ((index, item) in items.withIndex()) {
+                val textFallback = item.text?.toString()
+                    ?: item.intent?.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
+                    ?: item.htmlText?.let {
+                        android.text.Html.fromHtml(it, android.text.Html.FROM_HTML_MODE_COMPACT).toString()
+                    }
                 val uri = item.uri ?: item.intent?.data
                 if (uri != null) {
                     try {
@@ -505,14 +513,13 @@ class FloatingCueService : Service() {
                             parts += draft.text
                         } finally { temporary.delete(); runCatching { handle.close() } }
                         if (firstUri == null) firstUri = uri.toString()
-                    } catch (_: Exception) { blockedFiles++ }
-                } else {
-                    val value = item.text?.toString() ?: item.intent
-                        ?.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString() ?: item.htmlText?.let {
-                        android.text.Html.fromHtml(it, android.text.Html.FROM_HTML_MODE_COMPACT).toString()
+                    } catch (_: Exception) {
+                        // Some source apps attach a URI without granting overlay access, while
+                        // including a usable plain-text version in the same drag/clipboard item.
+                        if (!textFallback.isNullOrBlank()) parts += textFallback
+                        else blockedFiles++
                     }
-                    if (!value.isNullOrBlank()) parts += value
-                }
+                } else if (!textFallback.isNullOrBlank()) parts += textFallback
             }
             val intake = CaptureIntake(applicationContext)
             try {
