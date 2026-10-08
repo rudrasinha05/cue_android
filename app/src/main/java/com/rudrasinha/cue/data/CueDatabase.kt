@@ -5,12 +5,15 @@ import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
 import androidx.room.Index
+import androidx.room.ColumnInfo
 import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 @Entity(tableName = "commitments", indices = [Index(value = ["ownerId", "dueAtMillis"])])
@@ -22,7 +25,62 @@ data class CommitmentEntity(
     val dueAtMillis: Long?,
     val timezone: String,
     val status: String,
-    val updatedAtMillis: Long
+    val updatedAtMillis: Long,
+    @ColumnInfo(defaultValue = "0") val dirty: Boolean = false,
+    @ColumnInfo(defaultValue = "'default'") val toneId: String = "default",
+    @ColumnInfo(defaultValue = "0") val chainEnabled: Boolean = false,
+    @ColumnInfo(defaultValue = "0") val syncedAtMillis: Long = 0L,
+    @ColumnInfo(defaultValue = "'1440,60'") val chainOffsets: String = "1440,60"
+)
+
+@Entity(tableName = "sources", indices = [Index(value = ["ownerId", "commitmentId"]), Index(value = ["ownerId", "originType", "originKey"], unique = true)])
+data class SourceEntity(
+    @PrimaryKey val id: String,
+    val ownerId: String,
+    val commitmentId: String,
+    val originType: String,
+    val originKey: String?,
+    val title: String?,
+    val excerpt: String?,
+    val originalUri: String?,
+    val permissionState: String = "available",
+    val capturedAtMillis: Long,
+    val dirty: Boolean = false
+)
+
+@Entity(tableName = "reminder_events", indices = [Index(value = ["ownerId", "commitmentId", "occurredAtMillis"]), Index(value = ["ownerId", "idempotencyKey"], unique = true)])
+data class ReminderEventEntity(
+    @PrimaryKey val id: String,
+    val ownerId: String,
+    val commitmentId: String,
+    val eventType: String,
+    val changeData: String,
+    val actor: String,
+    val idempotencyKey: String,
+    val occurredAtMillis: Long,
+    val dirty: Boolean = false
+)
+
+@Entity(tableName = "history_batches", indices = [Index(value = ["ownerId", "lastAtMillis"])])
+data class HistoryBatchEntity(
+    @PrimaryKey val id: String,
+    val ownerId: String,
+    val firstAtMillis: Long,
+    val lastAtMillis: Long,
+    val eventCount: Int,
+    val checksum: String,
+    val payload: ByteArray,
+    val createdAtMillis: Long,
+    @ColumnInfo(defaultValue = "''") val searchIndex: String = ""
+)
+
+data class HistoryBatchSummary(
+    val id: String,
+    val ownerId: String,
+    val firstAtMillis: Long,
+    val lastAtMillis: Long,
+    val eventCount: Int,
+    val searchIndex: String
 )
 
 @Dao
@@ -30,29 +88,195 @@ interface CommitmentDao {
     @Query("SELECT * FROM commitments WHERE ownerId = :ownerId AND status = 'active' ORDER BY dueAtMillis ASC")
     fun observeActive(ownerId: String): Flow<List<CommitmentEntity>>
 
+    @Query("SELECT * FROM commitments WHERE ownerId = :ownerId AND status = 'completed' ORDER BY updatedAtMillis DESC")
+    fun observeCompleted(ownerId: String): Flow<List<CommitmentEntity>>
+
+    @Query("SELECT * FROM commitments WHERE id = :id LIMIT 1")
+    suspend fun byId(id: String): CommitmentEntity?
+
+    @Query("SELECT * FROM commitments WHERE ownerId = :ownerId AND status = 'active' AND dueAtMillis = :due")
+    suspend fun activeAtDue(ownerId: String, due: Long): List<CommitmentEntity>
+
+    @Query("SELECT * FROM commitments WHERE ownerId = :ownerId AND status = 'active' AND dueAtMillis > :now")
+    suspend fun futureAlarms(ownerId: String, now: Long): List<CommitmentEntity>
+
+    @Query("SELECT * FROM commitments WHERE ownerId = :ownerId AND status = 'active' AND dueAtMillis IS NOT NULL")
+    suspend fun ownerAlarms(ownerId: String): List<CommitmentEntity>
+
+    @Query("SELECT * FROM commitments WHERE ownerId = :ownerId ORDER BY updatedAtMillis, id")
+    suspend fun allForOwner(ownerId: String): List<CommitmentEntity>
+
+    @Query("DELETE FROM commitments WHERE ownerId = :ownerId")
+    suspend fun deleteForOwner(ownerId: String)
+
+    @Query("SELECT * FROM commitments WHERE ownerId = :ownerId AND dirty = 1 ORDER BY updatedAtMillis")
+    suspend fun pending(ownerId: String): List<CommitmentEntity>
+
+    @Query("UPDATE commitments SET dirty = 0, syncedAtMillis = :version WHERE id = :id AND ownerId = :ownerId AND updatedAtMillis = :version")
+    suspend fun markSynced(id: String, ownerId: String, version: Long)
+
     @Query("SELECT * FROM commitments WHERE ownerId = 'guest'")
     suspend fun guestRecords(): List<CommitmentEntity>
 
-    @Query("UPDATE commitments SET ownerId = :userId WHERE ownerId = 'guest'")
+    @Query("UPDATE commitments SET ownerId = :userId, dirty = 0, syncedAtMillis = updatedAtMillis WHERE ownerId = 'guest'")
     suspend fun claimGuestRecords(userId: String)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(records: List<CommitmentEntity>)
 
-    @Query("DELETE FROM commitments WHERE ownerId = :userId")
+    @Query("DELETE FROM commitments WHERE ownerId = :userId AND dirty = 0")
     suspend fun removeAccountCache(userId: String)
 }
 
-@Database(entities = [CommitmentEntity::class], version = 1, exportSchema = true)
+@Dao
+interface HistoryDao {
+    @Query("SELECT * FROM sources WHERE ownerId = :ownerId AND originType = :type AND originKey = :key LIMIT 1")
+    suspend fun sourceByOrigin(ownerId: String, type: String, key: String): SourceEntity?
+
+    @Query("SELECT * FROM sources WHERE ownerId = :ownerId ORDER BY capturedAtMillis DESC")
+    fun observeSources(ownerId: String): Flow<List<SourceEntity>>
+
+    @Query("SELECT * FROM reminder_events WHERE ownerId = :ownerId ORDER BY occurredAtMillis DESC")
+    fun observeEvents(ownerId: String): Flow<List<ReminderEventEntity>>
+
+    @Query("SELECT id, ownerId, firstAtMillis, lastAtMillis, eventCount, searchIndex FROM history_batches WHERE ownerId = :ownerId ORDER BY lastAtMillis DESC")
+    fun observeBatches(ownerId: String): Flow<List<HistoryBatchSummary>>
+
+    @Query("SELECT * FROM history_batches WHERE ownerId = :ownerId AND id = :id LIMIT 1")
+    suspend fun batchById(ownerId: String, id: String): HistoryBatchEntity?
+
+    @Query("SELECT * FROM history_batches WHERE ownerId = :ownerId")
+    suspend fun batches(ownerId: String): List<HistoryBatchEntity>
+
+    @Query("SELECT * FROM sources WHERE ownerId = :ownerId ORDER BY capturedAtMillis, id")
+    suspend fun sourcesForOwner(ownerId: String): List<SourceEntity>
+
+    @Query("SELECT * FROM reminder_events WHERE ownerId = :ownerId ORDER BY occurredAtMillis, id")
+    suspend fun eventsForOwner(ownerId: String): List<ReminderEventEntity>
+
+    @Query("DELETE FROM sources WHERE ownerId = :ownerId")
+    suspend fun deleteSourcesForOwner(ownerId: String)
+
+    @Query("DELETE FROM reminder_events WHERE ownerId = :ownerId")
+    suspend fun deleteEventsForOwner(ownerId: String)
+
+    @Query("DELETE FROM history_batches WHERE ownerId = :ownerId")
+    suspend fun deleteBatchesForOwner(ownerId: String)
+
+    @Query("SELECT * FROM reminder_events WHERE ownerId = :ownerId AND dirty = 0 AND occurredAtMillis < :cutoff ORDER BY occurredAtMillis, id LIMIT 100")
+    suspend fun compactable(ownerId: String, cutoff: Long): List<ReminderEventEntity>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertBatch(batch: HistoryBatchEntity): Long
+
+    @Query("DELETE FROM reminder_events WHERE ownerId = :ownerId AND dirty = 0 AND id IN (:ids)")
+    suspend fun removeArchivedEvents(ownerId: String, ids: List<String>)
+
+    @Query("SELECT * FROM sources WHERE ownerId = :ownerId AND dirty = 1 ORDER BY capturedAtMillis")
+    suspend fun pendingSources(ownerId: String): List<SourceEntity>
+
+    @Query("SELECT * FROM reminder_events WHERE ownerId = :ownerId AND dirty = 1 ORDER BY occurredAtMillis")
+    suspend fun pendingEvents(ownerId: String): List<ReminderEventEntity>
+
+    @Query("SELECT * FROM sources WHERE ownerId = 'guest'")
+    suspend fun guestSources(): List<SourceEntity>
+
+    @Query("SELECT * FROM reminder_events WHERE ownerId = 'guest'")
+    suspend fun guestEvents(): List<ReminderEventEntity>
+
+    @Query("UPDATE sources SET ownerId = :userId, dirty = 0 WHERE ownerId = 'guest'")
+    suspend fun claimGuestSources(userId: String)
+
+    @Query("UPDATE reminder_events SET ownerId = :userId, dirty = 0 WHERE ownerId = 'guest'")
+    suspend fun claimGuestEvents(userId: String)
+
+    @Query("UPDATE sources SET dirty = 0 WHERE ownerId = :ownerId AND id = :id")
+    suspend fun markSourceSynced(ownerId: String, id: String)
+
+    @Query("UPDATE reminder_events SET dirty = 0 WHERE ownerId = :ownerId AND id = :id")
+    suspend fun markEventSynced(ownerId: String, id: String)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertEvent(event: ReminderEventEntity)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertSource(source: SourceEntity): Long
+
+    @Query("DELETE FROM sources WHERE ownerId = :ownerId AND dirty = 0")
+    suspend fun removeSourceCache(ownerId: String)
+
+    @Query("DELETE FROM reminder_events WHERE ownerId = :ownerId AND dirty = 0")
+    suspend fun removeEventCache(ownerId: String)
+}
+
+@Database(entities = [CommitmentEntity::class, SourceEntity::class, ReminderEventEntity::class,
+    HistoryBatchEntity::class], version = 9, exportSchema = true)
 abstract class CueDatabase : RoomDatabase() {
     abstract fun commitments(): CommitmentDao
+    abstract fun history(): HistoryDao
 
     companion object {
         @Volatile private var instance: CueDatabase? = null
+        private val migration1to2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE commitments ADD COLUMN dirty INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+        private val migration2to3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS sources (id TEXT NOT NULL PRIMARY KEY, ownerId TEXT NOT NULL, commitmentId TEXT NOT NULL, originType TEXT NOT NULL, originKey TEXT, title TEXT, excerpt TEXT, originalUri TEXT, permissionState TEXT NOT NULL, capturedAtMillis INTEGER NOT NULL, dirty INTEGER NOT NULL)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_sources_ownerId_commitmentId ON sources (ownerId, commitmentId)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_sources_ownerId_originType_originKey ON sources (ownerId, originType, originKey)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS reminder_events (id TEXT NOT NULL PRIMARY KEY, ownerId TEXT NOT NULL, commitmentId TEXT NOT NULL, eventType TEXT NOT NULL, changeData TEXT NOT NULL, actor TEXT NOT NULL, idempotencyKey TEXT NOT NULL, occurredAtMillis INTEGER NOT NULL, dirty INTEGER NOT NULL)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_reminder_events_ownerId_commitmentId_occurredAtMillis ON reminder_events (ownerId, commitmentId, occurredAtMillis)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_reminder_events_ownerId_idempotencyKey ON reminder_events (ownerId, idempotencyKey)")
+            }
+        }
+        private val migration3to4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS history_batches (id TEXT NOT NULL PRIMARY KEY, ownerId TEXT NOT NULL, firstAtMillis INTEGER NOT NULL, lastAtMillis INTEGER NOT NULL, eventCount INTEGER NOT NULL, checksum TEXT NOT NULL, payload BLOB NOT NULL, createdAtMillis INTEGER NOT NULL)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_history_batches_ownerId_lastAtMillis ON history_batches (ownerId, lastAtMillis)")
+            }
+        }
+
+        private val migration4to5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE commitments ADD COLUMN toneId TEXT NOT NULL DEFAULT 'default'")
+            }
+        }
+
+        private val migration5to6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE history_batches ADD COLUMN searchIndex TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        private val migration6to7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE commitments ADD COLUMN chainEnabled INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        private val migration7to8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE commitments ADD COLUMN syncedAtMillis INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        private val migration8to9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE commitments ADD COLUMN chainOffsets TEXT NOT NULL DEFAULT '1440,60'")
+            }
+        }
+
+        // One migration path for the app and disposable migration tests.
+        internal fun openDatabase(context: Context, name: String): CueDatabase =
+            Room.databaseBuilder(context.applicationContext, CueDatabase::class.java, name)
+                .addMigrations(migration1to2, migration2to3, migration3to4, migration4to5,
+                    migration5to6, migration6to7, migration7to8, migration8to9).build()
 
         fun get(context: Context): CueDatabase = instance ?: synchronized(this) {
-            instance ?: Room.databaseBuilder(context.applicationContext, CueDatabase::class.java, "cue.db")
-                .build().also { instance = it }
+            instance ?: openDatabase(context, "cue.db").also { instance = it }
         }
     }
 }

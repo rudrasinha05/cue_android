@@ -4,6 +4,13 @@ This is the SQL applied to Cue project `gukhuakkguzzhrvtyszx` through the Supaba
 
 Two follow-up migrations narrowed permissions after auditing the project's effective default grants. Apply them in order after the base migration when recreating this schema. This prevents authenticated clients from physically deleting a reminder or source and from truncating any history table; account deletion still cascades through the owner foreign keys.
 
+The later `cue_source_event_fk_indexes` migration adds covering indexes for the two composite foreign keys, after the Supabase performance advisor flagged their lookup order:
+
+```sql
+create index if not exists sources_commitment_fk_idx on public.sources (commitment_id, user_id);
+create index if not exists reminder_events_commitment_fk_idx on public.reminder_events (commitment_id, user_id);
+```
+
 ```sql
 -- cue_m1_preserve_history
 revoke delete on public.commitments, public.sources from authenticated;
@@ -84,3 +91,7 @@ create policy reminder_events_insert on public.reminder_events
 revoke all on public.reminder_events from anon;
 grant select, insert on public.reminder_events to authenticated;
 ```
+
+Additive migration `cue_per_reminder_tone` on 2026-10-02: `commitments.tone_id text not null default 'default'`, constrained to `default` or `01`–`20`. Existing reminder rows receive `default`; owner RLS policies remain unchanged.
+
+Additive migration `cue_reminder_chain_nudges` on 2026-10-02: `commitments.chain_enabled boolean not null default false`. Existing reminders remain single-alert; owner RLS policies remain unchanged.

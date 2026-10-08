@@ -1,0 +1,25 @@
+# Cue release gate
+
+**2026 Google Play target:** New Android phone apps and app updates must target API 36 from 31 August 2026 (unless an approved extension applies). The Play candidate targets API 36, uses AGP 8.10.1 and Gradle 8.11.1. Recheck Android 16 runtime behavior on a freshly updated phone build before signing. See https://support.google.com/googleplay/android-developer/answer/11926878 and https://developer.android.com/build/releases/agp-8-10-0-release-notes.
+
+`develop` is the build source. CI must pass debug compile, unit tests, lint and an unsigned release AAB before a Play candidate is signed. The AAB artifact from CI is **not uploadable** until signed with the private upload key.
+
+## Device acceptance
+
+- Update an existing installation without clearing data. Confirm Room migration, Google return login, account isolation and guest reminder preservation.
+- On Android 8, 13, 14 and 15 where available, run [reminder checks](M2_DEVICE_CHECKS.md) and [capture/history checks](M3_CAPTURE_HISTORY_CHECKS.md), including denied/revoked permissions, offline alerts, overlay drag/drop, screen-session stop, 20 sounds, themes and alarm actions.
+- On two signed-in devices, sync an older verified archive, restore its exact event count/checksum on the second device, test a conflicting offline edit and export the complete account JSON.
+- Review every screen at normal and large font size in light/dark palettes with TalkBack. Compare the final visual design with the approved reference on a phone. Verify the four-tab footer and voice/import entry points on Reminders.
+
+## Play candidate
+
+- Configure the app's upload key outside Git and build a **signed** release AAB. Keep the same key for updates. Increment `versionCode` for each Play upload.
+- Complete Play Console declarations for exact alarms, full-screen alarm intents, overlay, foreground services, notification listener and per-session screen projection; verify the final permission copy and store listing/privacy policy.
+- Optional cloud analysis has an atomic per-owner quota (10/minute, 200/UTC day); provider/device QA is still required. Email access remains off. Signed-in data deletion uses `delete_my_cue_data()`. The separate **Delete Cue account** action invokes authenticated `cue-delete-account`, derives the target from the caller's JWT, deletes that owner's Cue data, then removes the Cue Auth identity. Before release, export, cancel once, verify account A deletion leaves account B untouched, and retry an offline failure. Check the old session clears on device. Google identity remains untouched.
+- Only after device acceptance and a signed bundle, merge the accepted `develop` commit to `main` and start Play internal testing.
+
+### Build a signed candidate on the owner's computer
+
+In Android Studio, use **Build → Generate Signed Bundle / APK → Android App Bundle** to create or select the private upload key. Back up the keystore, alias and passwords securely outside this repository. Gradle also supports a local signed build when all four environment variables are set: `CUE_UPLOAD_KEYSTORE` (absolute path to `.jks`), `CUE_UPLOAD_STORE_PASSWORD`, `CUE_UPLOAD_KEY_ALIAS`, and `CUE_UPLOAD_KEY_PASSWORD`. With none set, `:app:bundleRelease` deliberately remains unsigned. A partial set fails the build.
+
+On Windows PowerShell, set the four variables for that terminal session, then run `./gradlew.bat :app:bundleRelease`. The resulting bundle is `app/build/outputs/bundle/release/app-release.aab`. Verify its signer with `jarsigner -verify -certs -verbose .\app\build\outputs\bundle\release\app-release.aab` and compare the upload certificate fingerprint with Play Console before uploading. Do not paste the keystore or passwords into chat, source files, or GitHub issues. The repository ignores `.jks`, `.keystore`, `.aab` and local build outputs.

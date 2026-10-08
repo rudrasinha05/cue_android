@@ -1,4 +1,4 @@
-name: Android debug build
+name: Android quality build
 
 on:
   push:
@@ -11,10 +11,43 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
+      - name: Validate phone QA PowerShell syntax
+        shell: pwsh
+        run: |
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path $PWD 'tools/cue-phone-smoke.ps1'),
+            [ref]$null,
+            [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | Format-List | Out-String | Write-Host
+            throw 'Phone QA PowerShell script has syntax errors.'
+          }
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
       - uses: android-actions/setup-android@v4
-      - run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
-      - run: ./gradlew :app:assembleDebug --stacktrace
+      - run: sdkmanager "platforms;android-36" "build-tools;35.0.0"
+      - run: ./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug :app:bundleRelease --stacktrace
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cue-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cue-quality-reports
+          path: |
+            app/build/reports/tests/testDebugUnitTest/**
+            app/build/reports/lint-results-debug.html
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cue-unsigned-release-aab
+          path: app/build/outputs/bundle/release/*.aab
+          if-no-files-found: warn
