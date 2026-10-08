@@ -269,9 +269,14 @@ abstract class CueDatabase : RoomDatabase() {
             }
         }
 
+        // One migration path for the app and disposable migration tests.
+        internal fun openDatabase(context: Context, name: String): CueDatabase =
+            Room.databaseBuilder(context.applicationContext, CueDatabase::class.java, name)
+                .addMigrations(migration1to2, migration2to3, migration3to4, migration4to5,
+                    migration5to6, migration6to7, migration7to8, migration8to9).build()
+
         fun get(context: Context): CueDatabase = instance ?: synchronized(this) {
-            instance ?: Room.databaseBuilder(context.applicationContext, CueDatabase::class.java, "cue.db")
-                .addMigrations(migration1to2, migration2to3, migration3to4, migration4to5, migration5to6, migration6to7, migration7to8, migration8to9).build().also { instance = it }
+            instance ?: openDatabase(context, "cue.db").also { instance = it }
         }
     }
 }
