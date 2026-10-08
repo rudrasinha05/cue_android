@@ -1,6 +1,6 @@
 package com.rudrasinha.cue
 
-import androidx.compose.ui.test.assertExists
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -16,7 +16,7 @@ class CueNavigationSmokeTest {
 
     @Test fun coreTabsAndHelpRemainReachable() {
         compose.waitUntil(timeoutMillis = 20_000) {
-            compose.onAllNodesWithText("You").fetchSemanticsNodes().isNotEmpty()
+            compose.onAllNodes(hasText("You")).fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithText("You").performClick()
         compose.onNodeWithText("Your space").assertExists()
