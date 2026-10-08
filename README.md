@@ -9,7 +9,7 @@ Cue is an Android reminder assistant that helps you capture what matters, get lo
 ## Open in Android Studio
 
 1. Clone `https://github.com/rudrasinha05/cue_android.git` (or use **Get from VCS** in Android Studio).
-2. Switch to `develop`, then open the repository root. Use JDK 17 and install Android SDK 35 through SDK Manager.
+2. Switch to `develop`, then open the repository root. Use JDK 17, Android SDK 36, Gradle 8.11.1 and a compatible Android Studio version (Meerkat 2024.3.1 Patch 1 or newer).
 3. Sync Gradle, then run the `app` configuration on an Android 8.0+ emulator or device.
 
 The repository includes the Gradle wrapper, so no system Gradle installation is needed. Do not commit `local.properties`, signing keys, Supabase secrets, or AI provider keys.

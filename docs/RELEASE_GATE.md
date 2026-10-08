@@ -1,5 +1,7 @@
 # Cue release gate
 
+**2026 Google Play target:** New Android phone apps and app updates must target API 36 from 31 August 2026 (unless an approved extension applies). The Play candidate targets API 36, uses AGP 8.10.1 and Gradle 8.11.1. Recheck Android 16 runtime behavior on a freshly updated phone build before signing. See https://support.google.com/googleplay/android-developer/answer/11926878 and https://developer.android.com/build/releases/agp-8-10-0-release-notes.
+
 `develop` is the build source. CI must pass debug compile, unit tests, lint and an unsigned release AAB before a Play candidate is signed. The AAB artifact from CI is **not uploadable** until signed with the private upload key.
 
 ## Device acceptance

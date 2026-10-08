@@ -11,6 +11,10 @@ Scope: frozen Cue Android P5 release QA. Do not merge to main before all mandato
 - **Security schema (read-only live audit):** `commitments`, `sources`, `reminder_events`, `history_batches` have RLS with `user_id = auth.uid()` predicates. Public owner-scoped deletion/prune RPC wrappers are security-invoker and grant EXECUTE to `authenticated`, not `anon`; private security-definer implementations check `auth.uid()`. This static audit **does not execute deletion or prove two-account isolation**.
 - **New work on develop:** isolated original v1→current v9 Room data-retention test (opens an automatically deleted scratch DB, never `cue.db`), isolated temporary alarm schedule/cancel test, Compose accessibility semantics smoke and CI UI rerun at larger system font. Their results must be taken from their own newer GitHub run, not inferred from the old green runs.
 
+## October 2026 Play target compatibility
+
+The earlier API 35 target was insufficient for new Android phone apps submitted after 31 August 2026. P5 now upgrades compile/target to API 36 with AGP 8.10.1 and Gradle 8.11.1; **a new build and real-device regression are required** before approval. Old green API 35-target runs do not prove this build works. Minimum Android Studio for API 36 is Meerkat 2024.3.1 Patch 1 (or newer).
+
 ## Remaining blocking test evidence
 
 | Gate | Status | Only accepted evidence |
