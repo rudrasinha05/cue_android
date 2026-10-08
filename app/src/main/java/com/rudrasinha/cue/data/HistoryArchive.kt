@@ -35,8 +35,23 @@ class HistoryArchive(private val database: CueDatabase) {
                 val events = database.history().compactable(ownerId, cutoff)
                 if (events.size < 20) return@withTransaction false
                 val batch = pack(ownerId, events)
-                // A repeated compaction of the same input can safely finish the earlier attempt.
-                database.history().insertBatch(batch)
+                // Verify lossless reconstruction BEFORE removing the original events.
+                // If writing the batch fails the Room transaction keeps every raw event.
+                val verified = read(batch)
+                require(verified.map { it.id } == events.map { it.id }) {
+                    "History verification failed before compaction."
+                }
+                val inserted = database.history().insertBatch(batch)
+                if (inserted == -1L) {
+                    // A retry must not trust a duplicate primary key with different/corrupt data.
+                    val existing = database.history().batchById(ownerId, batch.id)
+                        ?: error("Previously written history batch is missing.")
+                    require(existing.checksum == batch.checksum &&
+                        existing.eventCount == batch.eventCount &&
+                        read(existing).map { it.id } == verified.map { it.id }) {
+                        "Previously written history batch differs."
+                    }
+                }
                 database.history().removeArchivedEvents(ownerId, events.map { it.id })
                 true
             }
@@ -45,7 +60,7 @@ class HistoryArchive(private val database: CueDatabase) {
     }
 
     suspend fun archivedIds(ownerId: String): Set<String> = database.history().batches(ownerId)
-        .flatMap { batch -> runCatching { read(batch).map { it.id } }.getOrDefault(emptyList()) }
+        .flatMap { batch -> read(batch).map { it.id } }
         .toSet()
 
     companion object {

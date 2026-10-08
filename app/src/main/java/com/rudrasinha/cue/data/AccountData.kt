@@ -10,9 +10,20 @@ import org.json.JSONObject
 class AccountData(private val database: CueDatabase, private val scheduler: ReminderScheduler,
     private val cloud: CloudCommitments) {
     companion object {
-        fun mergeEvents(current: List<ReminderEventEntity>, archived: List<ReminderEventEntity>) =
-            (current + archived).distinctBy { it.id }
-                .sortedWith(compareBy<ReminderEventEntity> { it.occurredAtMillis }.thenBy { it.id })
+        fun mergeEvents(current: List<ReminderEventEntity>, archived: List<ReminderEventEntity>): List<ReminderEventEntity> {
+            // The same immutable event may appear both in recent sync and an archive.
+            // Never silently prefer one if their persisted content differs.
+            val unique = linkedMapOf<String, ReminderEventEntity>()
+            (current + archived).forEach { event ->
+                val previous = unique[event.id]
+                require(previous == null || previous.copy(dirty = false) == event.copy(dirty = false)) {
+                    "Conflicting history event ${event.id}; export cancelled to protect your data."
+                }
+                if (previous == null) unique[event.id] = event
+            }
+            return unique.values.sortedWith(compareBy<ReminderEventEntity> { it.occurredAtMillis }
+                .thenBy { it.id })
+        }
     }
 
     suspend fun export(ownerId: String): ByteArray {
